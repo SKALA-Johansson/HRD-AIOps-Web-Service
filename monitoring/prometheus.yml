@@ -1,0 +1,38 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Spring Cloud Gateway
+  - job_name: gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["gateway:8080"]
+
+  # Eureka Server
+  - job_name: eureka
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["eureka:8761"]
+
+  # Goal Setter Agent (FastAPI - /metrics 는 starlette-prometheus 또는 prometheus_fastapi_instrumentator 필요)
+  # 현재는 /health 기반 헬스 체크만 사용
+  - job_name: goal-setter-agent
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["goal-setter-agent:10021"]
+
+  - job_name: curriculum-designer-agent
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["curriculum-designer-agent:10022"]
+
+  - job_name: ai-tutor-agent
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ai-tutor-agent:10024"]
+
+  # Kafka (JMX Exporter 사용 시)
+  # - job_name: kafka
+  #   static_configs:
+  #     - targets: ["kafka:9101"]
