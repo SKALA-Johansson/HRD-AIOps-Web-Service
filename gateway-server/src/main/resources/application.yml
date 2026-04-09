@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway-server
+  cloud:
+    gateway:
+      routes:
+        - id: auth-server
+          uri: lb://AUTH-SERVER
+          predicates:
+            - Path=/api/v1/auth/**, /api/v1/profiles/**
+        - id: goal-service
+          uri: lb://GOAL-SETTER-SERVICE
+          predicates:
+            - Path=/api/v1/goals/**
+        - id: curriculum-service
+          uri: lb://CURRICULUM-SERVICE
+          predicates:
+            - Path=/api/v1/curriculums/**
+        - id: approval-service
+          uri: lb://APPROVAL-SERVICE
+          predicates:
+            - Path=/api/v1/approvals/**
+        - id: learning-service
+          uri: lb://LEARNING-SERVICE
+          predicates:
+            - Path=/api/v1/learning/**
+        - id: tutor-service
+          uri: lb://TUTOR-SERVICE
+          predicates:
+            - Path=/api/v1/tutor/**
+        - id: report-service
+          uri: lb://REPORT-SERVICE
+          predicates:
+            - Path=/api/v1/reports/**
+        - id: content-service
+          uri: lb://CONTENT-SERVICE
+          predicates:
+            - Path=/api/v1/contents/**
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
