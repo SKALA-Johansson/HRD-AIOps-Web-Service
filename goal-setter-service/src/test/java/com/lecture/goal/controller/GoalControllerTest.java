@@ -30,7 +30,7 @@ public class GoalControllerTest {
         request.setUserId(1L);
         request.setProfileId(10L);
 
-        mockMvc.perform(post("/goals/generate")
+        mockMvc.perform(post("/api/v1/goals/generate")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isAccepted())
@@ -41,7 +41,7 @@ public class GoalControllerTest {
 
     @Test
     public void getGoal_ShouldReturn200AndGoalDetails() throws Exception {
-        mockMvc.perform(get("/goals/101")
+        mockMvc.perform(get("/api/v1/goals/101")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
