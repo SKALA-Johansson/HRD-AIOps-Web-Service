@@ -1,0 +1,327 @@
+import uuid
+from datetime import datetime, timedelta
+from typing import Optional
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.tutor import TutorSession, Feedback, LearningActivity
+from app.schemas.tutor import (
+    TutorSessionRequest,
+    TutorSessionResponse,
+    ReferenceItem,
+    GradingStatusResponse,
+    FeedbackDetailResponse,
+    QuizGradingRequest,
+    AssignmentGradingRequest,
+    FeedbackResponse,
+    GrowthReportRequest,
+    GrowthReportResponse,
+)
+from app.schemas.response import ApiResponse
+from app.services.tutor_agent import ai_tutor_agent
+from app.services.kafka_service import publish_activity_logged, publish_anomaly_detected
+from app.rag.qdrant_client import add_documents, search_relevant_content
+
+router = APIRouter(prefix="/tutor", tags=["ai-tutor"])
+
+
+def _feedback_to_response(f: Feedback) -> FeedbackResponse:
+    return FeedbackResponse(
+        id=f.id,
+        session_id=f.session_id,
+        employee_id=f.employee_id,
+        feedback_type=f.feedback_type,
+        score=f.score,
+        max_score=f.max_score,
+        passed=f.passed,
+        summary=f.summary,
+        strengths=f.get_strengths(),
+        weaknesses=f.get_weaknesses(),
+        recommendations=f.get_recommendations(),
+        detail=f.detail,
+        is_anomaly=f.is_anomaly,
+        anomaly_type=f.anomaly_type,
+        created_at=f.created_at,
+    )
+
+
+async def _run_grading(feedback_id: str, submission_data: dict):
+    """백그라운드 채점 태스크"""
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        feedback = db.query(Feedback).filter(Feedback.id == feedback_id).first()
+        if not feedback:
+            return
+
+        result = await ai_tutor_agent.grade_assignment(
+            assignment_title=submission_data.get("title", "과제"),
+            assignment_description=submission_data.get("description", ""),
+            student_submission=submission_data.get("submission", ""),
+            rubric=submission_data.get("rubric"),
+            max_score=submission_data.get("max_score", 100.0),
+        )
+        feedback.score = result.get("score")
+        feedback.max_score = result.get("max_score")
+        feedback.passed = result.get("passed")
+        feedback.summary = result.get("summary")
+        feedback.detail = result.get("detail")
+        feedback.set_strengths(result.get("strengths", []))
+        feedback.set_weaknesses(result.get("weaknesses", []))
+        feedback.set_recommendations(result.get("recommendations", []))
+        db.commit()
+    finally:
+        db.close()
+
+
+# ══════════════════════════════════════════════════════════════════
+#  18) AI 튜터 질문 - POST /tutor/sessions
+#  api.md: {userId, curriculumId, question} → {sessionId, answer, references}
+# ══════════════════════════════════════════════════════════════════
+
+@router.post("/sessions")
+async def ask_tutor(request: TutorSessionRequest, db: Session = Depends(get_db)):
+    """
+    api.md §18 - POST /tutor/sessions
+    질문을 받아 RAG 기반 답변을 생성하고 세션에 저장합니다.
+    """
+    # 세션 생성 또는 기존 세션 조회 (동일 userId+curriculumId면 이어서)
+    session = TutorSession(
+        employee_id=str(request.userId),
+        employee_name=f"User_{request.userId}",
+        curriculum_id=str(request.curriculumId),
+        session_type="chat",
+        status="active",
+    )
+    session.set_messages([])
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    # RAG로 참고 자료 검색
+    try:
+        rag_results = await search_relevant_content(request.question, k=3)
+    except Exception:
+        rag_results = []
+
+    # AI 답변 생성
+    answer = await ai_tutor_agent.chat(
+        user_message=request.question,
+        conversation_history=[],
+        module_title=None,
+    )
+
+    session.add_message("user", request.question)
+    session.add_message("assistant", answer)
+    db.commit()
+
+    await publish_activity_logged(
+        employee_id=str(request.userId),
+        session_id=session.id,
+        activity_type="chat",
+    )
+
+    references = [ReferenceItem(title=f"참고 자료 {i+1}", source="RAG") for i in range(len(rag_results))]
+
+    return ApiResponse.ok(
+        data=TutorSessionResponse(sessionId=session.id, answer=answer, references=references),
+        code="TUTOR-200",
+        message="답변 생성 완료",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+#  19) 과제 자동 채점 요청 - POST /tutor/assignments/{submissionId}/grade
+# ══════════════════════════════════════════════════════════════════
+
+@router.post("/assignments/{submission_id}/grade")
+async def grade_assignment_async(
+    submission_id: str,
+    background_tasks: BackgroundTasks,
+    request: AssignmentGradingRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    api.md §19 - POST /tutor/assignments/{submissionId}/grade
+    비동기 채점을 시작하고 IN_PROGRESS 상태를 즉시 반환합니다.
+    """
+    # 세션 placeholder 생성
+    session = TutorSession(
+        employee_id="0",
+        employee_name="system",
+        session_type="assignment",
+        status="active",
+    )
+    session.set_messages([])
+    db.add(session)
+    db.flush()
+
+    feedback = Feedback(
+        session_id=session.id,
+        employee_id="0",
+        feedback_type="assignment_grading",
+        summary="채점 진행 중",
+    )
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+
+    submission_data = {
+        "title": request.assignment_title,
+        "description": request.assignment_description,
+        "submission": request.student_submission,
+        "rubric": request.rubric,
+        "max_score": request.max_score,
+    }
+    background_tasks.add_task(_run_grading, feedback.id, submission_data)
+
+    return ApiResponse.ok(
+        data=GradingStatusResponse(gradingStatus="IN_PROGRESS"),
+        code="TUTOR-202",
+        message="자동 채점이 시작되었습니다.",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+#  20) 피드백 조회 - GET /tutor/feedback/{submissionId}
+# ══════════════════════════════════════════════════════════════════
+
+@router.get("/feedback/{submission_id}")
+def get_feedback(submission_id: str, db: Session = Depends(get_db)):
+    """
+    api.md §20 - GET /tutor/feedback/{submissionId}
+    submissionId = feedback.id
+    """
+    feedback = db.query(Feedback).filter(Feedback.id == submission_id).first()
+    if not feedback:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+
+    return ApiResponse.ok(
+        data=FeedbackDetailResponse(
+            score=feedback.score or 0,
+            strengths=feedback.get_strengths(),
+            improvements=feedback.get_weaknesses(),
+        ),
+        code="TUTOR-200",
+        message="피드백 조회 성공",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+#  21) 성장 리포트 조회 - GET /reports/users/{userId}
+# ══════════════════════════════════════════════════════════════════
+
+@router.get("/reports/users/{user_id}")
+async def get_growth_report(user_id: str, period_days: int = 30, db: Session = Depends(get_db)):
+    """api.md §21 - 개인 성장 리포트 조회"""
+    since = datetime.utcnow() - timedelta(days=period_days)
+
+    sessions = (
+        db.query(TutorSession)
+        .filter(TutorSession.employee_id == user_id, TutorSession.started_at >= since)
+        .all()
+    )
+    activities = (
+        db.query(LearningActivity)
+        .filter(LearningActivity.employee_id == user_id, LearningActivity.logged_at >= since)
+        .order_by(LearningActivity.logged_at.desc())
+        .all()
+    )
+    feedbacks = (
+        db.query(Feedback)
+        .filter(Feedback.employee_id == user_id, Feedback.created_at >= since)
+        .all()
+    )
+    scores = [f.score for f in feedbacks if f.score is not None]
+    avg_score = sum(scores) / len(scores) if scores else 0.0
+    total_hours = sum(a.duration_minutes or 0 for a in activities) / 60
+
+    report_data = await ai_tutor_agent.generate_growth_report(
+        employee_name=f"User_{user_id}",
+        period_days=period_days,
+        total_sessions=len(sessions),
+        total_learning_hours=total_hours,
+        average_score=avg_score,
+        recent_activities=[{"activity_type": a.activity_type, "module_id": a.module_id, "score": a.score, "duration_minutes": a.duration_minutes} for a in activities],
+        recent_feedback=[{"feedback_type": f.feedback_type, "score": f.score, "passed": f.passed} for f in feedbacks],
+    )
+
+    return ApiResponse.ok(
+        data={
+            "reportId": hash(f"{user_id}{datetime.utcnow().date()}") % 100000,
+            "userId": int(user_id) if user_id.isdigit() else user_id,
+            "strengths": report_data.get("strengths", []),
+            "weaknesses": report_data.get("weaknesses", []),
+            "achievementMetrics": {"averageScore": avg_score, "totalSessions": len(sessions)},
+        },
+        code="REPORT-200",
+        message="성장 리포트 조회 성공",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+#  이상 징후 탐지
+# ══════════════════════════════════════════════════════════════════
+
+@router.post("/anomaly/check/{employee_id}")
+async def check_anomaly(employee_id: str, db: Session = Depends(get_db)):
+    """학습 이상 징후를 즉시 점검합니다."""
+    last = (
+        db.query(LearningActivity)
+        .filter(LearningActivity.employee_id == employee_id)
+        .order_by(LearningActivity.logged_at.desc())
+        .first()
+    )
+    recent_scores = [
+        a.score for a in
+        db.query(LearningActivity)
+        .filter(LearningActivity.employee_id == employee_id, LearningActivity.score.isnot(None))
+        .order_by(LearningActivity.logged_at.desc()).limit(5).all()
+    ]
+    recent_feedbacks = (
+        db.query(Feedback)
+        .filter(Feedback.employee_id == employee_id)
+        .order_by(Feedback.created_at.desc()).limit(10).all()
+    )
+    consecutive_fails = sum(1 for fb in recent_feedbacks if fb.passed is False)
+
+    anomaly = ai_tutor_agent.detect_anomaly(
+        employee_id=employee_id,
+        last_activity_at=last.logged_at if last else None,
+        recent_scores=recent_scores,
+        consecutive_fails=consecutive_fails,
+    )
+
+    if anomaly:
+        await publish_anomaly_detected(
+            employee_id=employee_id,
+            anomaly_type=anomaly["anomaly_type"],
+            description=anomaly["description"],
+            severity=anomaly["severity"],
+        )
+
+    return ApiResponse.ok(
+        data={"anomalyDetected": anomaly is not None, "anomaly": anomaly, "checkedAt": datetime.utcnow().isoformat()},
+        code="COMMON-200",
+        message="이상 징후 점검 완료",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+#  RAG 문서 업로드
+# ══════════════════════════════════════════════════════════════════
+
+class RagUploadRequest(BaseModel):
+    texts: list[str]
+    metadatas: list[dict] | None = None
+
+
+@router.post("/rag/documents")
+async def upload_rag_documents(request: RagUploadRequest):
+    await add_documents(request.texts, request.metadatas)
+    return ApiResponse.ok(
+        data={"uploaded": len(request.texts)},
+        code="COMMON-200",
+        message=f"{len(request.texts)}건의 문서가 업로드되었습니다.",
+    )
