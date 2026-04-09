@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = "sk-your-key-here"
     OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+
+    # Qdrant
+    QDRANT_HOST: str = "localhost"
+    QDRANT_PORT: int = 6333
+    QDRANT_COLLECTION: str = "employee_profiles"
 
     class Config:
         env_file = ".env"

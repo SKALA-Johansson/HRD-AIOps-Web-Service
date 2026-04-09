@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from app.config import settings
 from app.database import create_tables
 from app.routers.goals import router as goals_router
+from app.routers.ingest import router as ingest_router
 from app.services.kafka_service import consume_onboarding_events, stop_producer
 
 logging.basicConfig(
@@ -71,6 +72,7 @@ app = FastAPI(
 )
 
 app.include_router(goals_router)
+app.include_router(ingest_router)
 
 
 @app.get("/health")

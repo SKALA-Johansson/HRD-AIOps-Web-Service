@@ -19,7 +19,7 @@ class Goal(Base):
     skills = Column(Text, nullable=False)       # JSON list: ["Python", "SQL", ...]
     goals = Column(Text, nullable=True)         # JSON list of goal objects
     status = Column(
-        SAEnum("draft", "approved", "rejected", name="goal_status"),
+        SAEnum("generating", "draft", "approved", "rejected", "error", name="goal_status"),
         default="draft",
         nullable=False,
     )
