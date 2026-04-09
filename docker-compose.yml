@@ -1,0 +1,553 @@
+version: "3.9"
+
+# ════════════════════════════════════════════════════════════════════
+#  공통 환경 변수 앵커
+# ════════════════════════════════════════════════════════════════════
+x-db-env: &db-env
+  DB_HOST: mariadb
+  DB_PORT: 3306
+  DB_USER: root
+  DB_PASSWORD: rootpassword
+
+x-kafka-env: &kafka-env
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+x-eureka-env: &eureka-env
+  EUREKA_SERVER_URL: http://eureka:8761/eureka
+
+x-qdrant-env: &qdrant-env
+  QDRANT_HOST: qdrant
+  QDRANT_PORT: 6333
+
+x-openai-env: &openai-env
+  OPENAI_API_KEY: ${OPENAI_API_KEY}
+  OPENAI_MODEL: gpt-4o-mini
+  OPENAI_EMBEDDING_MODEL: text-embedding-3-small
+
+networks:
+  msa-network:
+    driver: bridge
+
+volumes:
+  mariadb-data:
+  qdrant-data:
+  kafka-data:
+  elasticsearch-data:
+  grafana-data:
+
+# ════════════════════════════════════════════════════════════════════
+#  서비스 정의
+# ════════════════════════════════════════════════════════════════════
+services:
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [1] Eureka Server  :8761
+  # ──────────────────────────────────────────────────────────────────
+  eureka:
+    build:
+      context: ./eureka-server
+      dockerfile: Dockerfile
+    container_name: eureka
+    ports:
+      - "8761:8761"
+    networks:
+      - msa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [2] Spring Cloud Gateway  :8080
+  #      /api/goals/**          → goal-setter-agent:10021
+  #      /api/curriculums/**    → curriculum-designer-agent:10022
+  #      /api/tutor/**          → ai-tutor-agent:10024
+  # ──────────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway-server
+      dockerfile: Dockerfile
+    container_name: gateway
+    ports:
+      - "8080:8080"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [3] MariaDB  :3306
+  # ──────────────────────────────────────────────────────────────────
+  mariadb:
+    image: mariadb:11.2
+    container_name: mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - msa-network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [4] Kafka (KRaft)  :9092
+  # ──────────────────────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - msa-network
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Kafka 토픽 초기 생성
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: >
+      bash -c "
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic onboarding-events  --partitions 3 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic curriculum-events  --partitions 3 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic learning-logs      --partitions 3 --replication-factor 1 &&
+        echo '=== Kafka topics created ==='
+      "
+    networks:
+      - msa-network
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [5] Qdrant  :6333
+  # ──────────────────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.11.0
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [6] Prometheus  :9090
+  # ──────────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [7] Grafana  :3000
+  #      기본 계정: admin / admin
+  # ──────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [8] ELK Stack
+  # ──────────────────────────────────────────────────────────────────
+  elasticsearch:
+    image: elasticsearch:8.14.3
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - msa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  logstash:
+    image: logstash:8.14.3
+    container_name: logstash
+    ports:
+      - "5044:5044"   # Beats input
+      - "5001:5000"   # TCP JSON input (host 5000 포트 충돌 회피)
+    volumes:
+      - ./logging/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logging/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+    environment:
+      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  kibana:
+    image: kibana:8.14.3
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - msa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  Spring Boot Microservices (Java)
+  # ──────────────────────────────────────────────────────────────────
+
+  # Auth Server  :9000
+  auth-server:
+    build:
+      context: ./auth-server
+      dockerfile: Dockerfile
+    container_name: auth-server
+    ports:
+      - "9000:9000"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # Goal Setter Service  :9001
+  goal-setter-service:
+    build:
+      context: ./goal-setter-service
+      dockerfile: Dockerfile
+    container_name: goal-setter-service
+    ports:
+      - "9001:9001"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # Curriculum Service  :9002
+  curriculum-service:
+    build:
+      context: ./curriculum-service
+      dockerfile: Dockerfile
+    container_name: curriculum-service
+    ports:
+      - "9002:9002"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # Approval Service  :9003
+  approval-service:
+    build:
+      context: ./approval-service
+      dockerfile: Dockerfile
+    container_name: approval-service
+    ports:
+      - "9003:9003"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # Learning Service  :9004
+  learning-service:
+    build:
+      context: ./learning-service
+      dockerfile: Dockerfile
+    container_name: learning-service
+    ports:
+      - "9004:9004"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # Tutor Service  :9005
+  tutor-service:
+    build:
+      context: ./tutor-service
+      dockerfile: Dockerfile
+    container_name: tutor-service
+    ports:
+      - "9005:9005"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # Report Service  :9006
+  report-service:
+    build:
+      context: ./report-service
+      dockerfile: Dockerfile
+    container_name: report-service
+    ports:
+      - "9006:9006"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # Content Service  :9007
+  content-service:
+    build:
+      context: ./content-service
+      dockerfile: Dockerfile
+    container_name: content-service
+    ports:
+      - "9007:9007"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka:8761/eureka/
+    depends_on:
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [9] Goal Setter Agent  :10021
+  # ──────────────────────────────────────────────────────────────────
+  goal-setter-agent:
+    build:
+      context: ./goal-setter-agent
+      dockerfile: Dockerfile
+    container_name: goal-setter-agent
+    ports:
+      - "10021:10021"
+    environment:
+      <<: [*db-env, *kafka-env, *eureka-env, *qdrant-env, *openai-env]
+      SERVICE_NAME: goal-setter-agent
+      SERVICE_PORT: 10021
+      EUREKA_INSTANCE_HOST: goal-setter-agent
+      DB_NAME: goal_db
+      KAFKA_GROUP_ID: goal-setter-group
+      KAFKA_CONSUME_TOPIC: onboarding-events
+      KAFKA_PRODUCE_TOPIC: curriculum-events
+      QDRANT_COLLECTION: employee_profiles
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [10] Curriculum Designer Agent  :10022
+  # ──────────────────────────────────────────────────────────────────
+  curriculum-designer-agent:
+    build:
+      context: ./curriculum-designer-agent
+      dockerfile: Dockerfile
+    container_name: curriculum-designer-agent
+    ports:
+      - "10022:10022"
+    environment:
+      <<: [*db-env, *kafka-env, *eureka-env, *qdrant-env, *openai-env]
+      SERVICE_NAME: curriculum-designer-agent
+      SERVICE_PORT: 10022
+      EUREKA_INSTANCE_HOST: curriculum-designer-agent
+      DB_NAME: curriculum_db
+      KAFKA_GROUP_ID: curriculum-designer-group
+      KAFKA_CONSUME_TOPIC: curriculum-events
+      KAFKA_PRODUCE_TOPIC: curriculum-events
+      QDRANT_COLLECTION: curriculum_rag
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [11] AI Tutor Agent  :10024
+  # ──────────────────────────────────────────────────────────────────
+  ai-tutor-agent:
+    build:
+      context: ./ai-tutor-agent
+      dockerfile: Dockerfile
+    container_name: ai-tutor-agent
+    ports:
+      - "10024:10024"
+    environment:
+      <<: [*db-env, *kafka-env, *eureka-env, *qdrant-env, *openai-env]
+      SERVICE_NAME: ai-tutor-agent
+      SERVICE_PORT: 10024
+      EUREKA_INSTANCE_HOST: ai-tutor-agent
+      DB_NAME: tutor_db
+      KAFKA_GROUP_ID: ai-tutor-group
+      KAFKA_CONSUME_TOPIC: learning-logs
+      KAFKA_PRODUCE_TOPIC: learning-logs
+      QDRANT_COLLECTION: tutor_rag
+      ANOMALY_INACTIVITY_HOURS: 48
+      ANOMALY_LOW_SCORE_THRESHOLD: 40
+      ANOMALY_CONSECUTIVE_FAILS: 3
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────
+  #  [12] Embedding Agent (BGE-M3)  :10028
+  # ──────────────────────────────────────────────────────────────────
+  embedding-agent:
+    build:
+      context: ./embedding-agent
+      dockerfile: Dockerfile
+    container_name: embedding-agent
+    ports:
+      - "10028:10028"
+    environment:
+      <<: [*eureka-env, *qdrant-env]
+      SERVICE_NAME: embedding-agent
+      SERVICE_PORT: 10028
+      EUREKA_INSTANCE_HOST: embedding-agent
+      QDRANT_COLLECTION: bge_m3_docs
+      BGE_M3_MODEL_NAME: BAAI/bge-m3
+      BGE_M3_DEVICE: cpu
+      BGE_BATCH_SIZE: 16
+    depends_on:
+      qdrant:
+        condition: service_started
+      eureka:
+        condition: service_healthy
+    networks:
+      - msa-network
+    restart: unless-stopped
