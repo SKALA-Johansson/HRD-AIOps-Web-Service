@@ -55,7 +55,8 @@ public class LearningControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.code").value("LEARNING-201"))
-                .andExpect(jsonPath("$.data.submissionId").value(555));
+                .andExpect(jsonPath("$.data.submissionId").isNumber())
+                .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
     }
 
     @Test

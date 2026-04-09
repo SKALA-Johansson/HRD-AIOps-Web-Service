@@ -13,6 +13,7 @@ public class Content {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    private Long moduleId;
     private String title;
     private String type; // PDF, VIDEO
     private String url;
