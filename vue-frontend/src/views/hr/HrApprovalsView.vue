@@ -82,6 +82,30 @@
         <pre v-if="genResultJson" class="pre">{{ genResultJson }}</pre>
       </section>
 
+      <section v-if="quickId != null" class="quick-panel" aria-label="빠른 승인">
+        <div class="quick-head">
+          <h2 class="panel-title">2) 생성된 커리큘럼 빠른 결정</h2>
+          <span class="pill">ID {{ quickId }}</span>
+        </div>
+        <p class="hint">
+          방금 생성된 커리큘럼을 바로 검토하고 <strong>승인</strong> 또는 <strong>삭제</strong>를 선택하세요.
+        </p>
+        <div class="quick-actions">
+          <button type="button" class="btn btn-primary btn-sm" :disabled="actionBusy || loadingDetail" @click="doApprove">
+            승인
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm danger" :disabled="actionBusy || loadingDetail" @click="doDelete">
+            삭제
+          </button>
+          <button type="button" class="btn btn-outline btn-sm" :disabled="loadingDetail" @click="scrollToReview">
+            구성 확인
+          </button>
+          <button type="button" class="btn btn-outline btn-sm" :disabled="loadingList" @click="loadPendingCurricula">
+            대기 목록 보기
+          </button>
+        </div>
+      </section>
+
       <header class="page-head">
         <div>
           <h2 class="panel-title">2) 승인 대기 목록</h2>
@@ -133,7 +157,7 @@
           <template v-else>
             <div v-if="loadingDetail" class="muted">상세 불러오는 중…</div>
             <template v-else>
-              <div class="detail-head">
+              <div class="detail-head" ref="reviewEl">
                 <h3 class="panel-title">3) 검토 · {{ detail.title }}</h3>
                 <span class="badge" :class="badgeClass(detail.status)">{{ detail.status || '—' }}</span>
               </div>
@@ -226,7 +250,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import { approvalsApi } from '@/api/approvals.js'
 import { curriculumsApi } from '@/api/curriculums.js'
@@ -243,6 +267,8 @@ const genSelectedName = ref('')
 const genErr = ref('')
 const genOk = ref('')
 const genResultJson = ref('')
+const quickId = ref(null)
+const reviewEl = ref(null)
 const genMeta = reactive({
   company: 'SK hynix',
   jobFamily: 'Backend',
@@ -290,6 +316,7 @@ function clearGenFile() {
   genErr.value = ''
   genOk.value = ''
   genResultJson.value = ''
+  quickId.value = null
   if (genFileInput.value) genFileInput.value.value = ''
 }
 
@@ -336,8 +363,22 @@ async function runGenerateFromPdf() {
     const res = await curriculumsApi.generateFromPdf(fd)
     const data = res.data?.data ?? res.data
     genResultJson.value = JSON.stringify(data, null, 2)
-    genOk.value = '생성 요청이 접수되었습니다. 아래 대기 목록에서 결과를 확인하세요.'
-    await loadPendingCurricula()
+    const id =
+      data?.curriculumId ??
+      data?.id ??
+      data?.curriculum?.curriculumId ??
+      data?.curriculum?.id
+    if (id != null) {
+      quickId.value = Number(id)
+      genOk.value = `생성 요청이 접수되었습니다. (curriculumId: ${id}) 바로 승인/삭제를 선택할 수 있습니다.`
+      await loadPendingCurricula()
+      await selectCurriculum({ curriculumId: Number(id), title: data?.title, status: data?.status })
+      await nextTick()
+      scrollToReview()
+    } else {
+      genOk.value = '생성 요청이 접수되었습니다. 응답에 curriculumId가 없어 대기 목록에서 확인이 필요합니다.'
+      await loadPendingCurricula()
+    }
   } catch (e) {
     genErr.value =
       e.response?.data?.message ||
@@ -345,6 +386,13 @@ async function runGenerateFromPdf() {
       '요청에 실패했습니다. 게이트웨이에 generate-from-pdf 엔드포인트가 있는지 확인하세요.'
   } finally {
     genLoading.value = false
+  }
+}
+
+function scrollToReview() {
+  const el = reviewEl.value
+  if (el && typeof el.scrollIntoView === 'function') {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 }
 
@@ -676,6 +724,35 @@ onMounted(() => {
   border-radius: var(--radius-lg);
   padding: 20px;
   margin-bottom: 18px;
+}
+.quick-panel {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 18px;
+}
+.quick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.quick-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
 }
 .create-head {
   display: flex;
