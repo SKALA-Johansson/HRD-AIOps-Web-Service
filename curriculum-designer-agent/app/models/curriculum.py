@@ -21,7 +21,7 @@ class Curriculum(Base):
     description = Column(Text, nullable=True)
     total_weeks = Column(Integer, default=12)
     status = Column(
-        SAEnum("draft", "approved", "revised", "active", "completed", name="curriculum_status"),
+        SAEnum("generating", "draft", "approved", "rejected", "revised", "active", "completed", "error", name="curriculum_status"),
         default="draft",
         nullable=False,
     )

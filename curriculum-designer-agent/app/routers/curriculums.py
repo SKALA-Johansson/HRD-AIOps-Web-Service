@@ -155,7 +155,7 @@ async def generate_curriculum(
 
     return ApiResponse.created(
         data=CurriculumGeneratingResponse(
-            curriculumId=hash(curriculum.id) % 100000,
+            curriculumId=curriculum.id,
             status="GENERATING",
         ),
         code="CURRICULUM-202",

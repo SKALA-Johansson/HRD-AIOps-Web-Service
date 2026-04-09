@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 class CurriculumGenerateRequest(BaseModel):
     """POST /curriculums/generate - api.md §8"""
-    goalId: int
+    goalId: str
 
 
 class CurriculumUpdateRequest(BaseModel):
@@ -20,7 +20,7 @@ class CurriculumUpdateRequest(BaseModel):
 
 class CurriculumGeneratingResponse(BaseModel):
     """비동기 생성 접수 응답"""
-    curriculumId: int
+    curriculumId: str
     status: str = "GENERATING"
 
 
