@@ -104,8 +104,8 @@ public class AuthorizationServerConfig {
                                 "/actuator/health",
                                 "/actuator/info",
                                 "/.well-known/appspecific/**",
-                                "/auth/signup",
-                                "/auth/login"
+                                "/api/v1/auth/signup",
+                                "/api/v1/auth/login"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
