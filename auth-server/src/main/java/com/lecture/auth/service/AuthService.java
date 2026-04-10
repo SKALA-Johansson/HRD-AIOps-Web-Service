@@ -27,12 +27,12 @@ public class AuthService {
 
     @Transactional
     public User signup(SignupRequest request) {
-        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-            throw new RuntimeException("Email already exists");
+        if (userRepository.findByUsername(request.getUsername()).isPresent()) {
+            throw new RuntimeException("Username (Employee ID) already exists");
         }
 
         User user = User.builder()
-                .email(request.getEmail())
+                .username(request.getUsername())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName())
                 .role(request.getRole() != null ? request.getRole() : User.Role.EMPLOYEE)
@@ -46,7 +46,7 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
@@ -60,7 +60,7 @@ public class AuthService {
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .user(AuthResponse.UserInfo.builder()
-                        .userId(user.getId())
+                        .userId(user.getUserId())
                         .name(user.getName())
                         .role(user.getRole())
                         .build())
@@ -73,9 +73,9 @@ public class AuthService {
                 .issuer("http://localhost:8080")
                 .issuedAt(now)
                 .expiresAt(now.plus(hours, ChronoUnit.HOURS))
-                .subject(String.valueOf(user.getId()))
-                .claim("user_id", user.getId())
-                .claim("email", user.getEmail())
+                .subject(user.getUserId())
+                .claim("user_id", user.getUserId())
+                .claim("username", user.getUsername())
                 .claim("role", user.getRole().name())
                 .claim("name", user.getName())
                 .build();

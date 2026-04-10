@@ -2,8 +2,8 @@ package com.lecture.auth.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-
 import java.util.Map;
+import java.util.UUID;
 
 @Entity
 @Table(name = "profiles")
@@ -15,12 +15,18 @@ import java.util.Map;
 public class Profile {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "profile_id", length = 36)
+    private String profileId;
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    private String name;
+    private String department;
+    private String jobRole;
+    @Column(columnDefinition = "TEXT")
+    private String resumeSummary;
 
     private String desiredCompany;
     private String desiredJob;
@@ -33,4 +39,11 @@ public class Profile {
     @MapKeyColumn(name = "assessment_key")
     @Column(name = "assessment_value")
     private Map<String, Integer> preAssessment;
+
+    @PrePersist
+    public void prePersist() {
+        if (this.profileId == null) {
+            this.profileId = UUID.randomUUID().toString();
+        }
+    }
 }

@@ -2,10 +2,8 @@ package com.lecture.approval.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "approvals")
@@ -14,37 +12,45 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@EntityListeners(AuditingEntityListener.class)
 public class Approval {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "approval_id", length = 36)
+    private String approvalId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ResourceType resourceType;
+    @Column(name = "target_type", length = 50)
+    private String targetType; // GOAL or CURRICULUM
 
-    @Column(nullable = false)
-    private Long resourceId;
+    @Column(name = "target_id", length = 36, nullable = false)
+    private String targetId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Action action;
+    @Column(name = "approver_id", length = 36)
+    private String approverId;
 
-    private String comment;
+    @Column(length = 50, nullable = false)
+    private String status; // PENDING, APPROVED, REJECTED
 
-    private Long approverId;
+    @Column(columnDefinition = "TEXT")
+    private String comments;
 
-    @CreatedDate
-    @Column(updatable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "processed_at")
+    private LocalDateTime processedAt;
 
-    public enum ResourceType {
-        GOAL, CURRICULUM
+    @PrePersist
+    public void prePersist() {
+        if (this.approvalId == null) {
+            this.approvalId = UUID.randomUUID().toString();
+        }
+        if (this.processedAt == null) {
+            this.processedAt = LocalDateTime.now();
+        }
     }
 
     public enum Action {
         APPROVE, REJECT
+    }
+
+    public enum ResourceType {
+        GOAL, CURRICULUM
     }
 }

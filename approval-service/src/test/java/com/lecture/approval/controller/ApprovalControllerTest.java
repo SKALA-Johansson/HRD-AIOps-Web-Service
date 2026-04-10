@@ -12,6 +12,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.UUID;
+
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -36,46 +38,52 @@ public class ApprovalControllerTest {
     }
 
     @Test
-    void approveGoal_Success() throws Exception {
+    void processApproval_Success() throws Exception {
         // Given
-        Long goalId = 1L;
-        ApprovalRequest request = new ApprovalRequest(Approval.Action.APPROVE, "Goal looks good");
+        String approvalId = UUID.randomUUID().toString();
+        Approval approval = Approval.builder()
+                .approvalId(approvalId)
+                .targetType("CURRICULUM")
+                .targetId("cur-123")
+                .status("PENDING")
+                .build();
+        approvalRepository.save(approval);
+
+        ApprovalRequest request = new ApprovalRequest(Approval.Action.APPROVE, "Looks good");
 
         // When & Then
-        mockMvc.perform(post("/api/v1/approvals/goals/{goalId}", goalId)
+        mockMvc.perform(post("/api/v1/approvals/{approvalId}/confirm", approvalId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated())
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success", is(true)))
-                .andExpect(jsonPath("$.message", is("Goal approval recorded")))
-                .andExpect(jsonPath("$.data.resourceType", is("GOAL")))
-                .andExpect(jsonPath("$.data.resourceId", is(1)))
-                .andExpect(jsonPath("$.data.action", is("APPROVE")))
-                .andExpect(jsonPath("$.data.comment", is("Goal looks good")));
+                .andExpect(jsonPath("$.message", is("Approval processed successfully")))
+                .andExpect(jsonPath("$.data.status", is("APPROVE")))
+                .andExpect(jsonPath("$.data.comments", is("Looks good")));
     }
 
     @Test
     void getApprovals_Success() throws Exception {
         // Given
-        Long resourceId = 1L;
-        Approval.ResourceType resourceType = Approval.ResourceType.GOAL;
+        String targetId = "target-123";
+        String targetType = "GOAL";
         
         Approval approval = Approval.builder()
-                .resourceType(resourceType)
-                .resourceId(resourceId)
-                .action(Approval.Action.APPROVE)
-                .comment("Approved")
+                .targetType(targetType)
+                .targetId(targetId)
+                .status("APPROVED")
+                .comments("Approved")
                 .build();
         approvalRepository.save(approval);
 
         // When & Then
         mockMvc.perform(get("/api/v1/approvals")
-                        .param("resourceType", "GOAL")
-                        .param("resourceId", "1"))
+                        .param("targetType", targetType)
+                        .param("targetId", targetId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success", is(true)))
                 .andExpect(jsonPath("$.data", hasSize(1)))
-                .andExpect(jsonPath("$.data[0].resourceType", is("GOAL")))
-                .andExpect(jsonPath("$.data[0].resourceId", is(1)));
+                .andExpect(jsonPath("$.data[0].targetType", is(targetType)))
+                .andExpect(jsonPath("$.data[0].targetId", is(targetId)));
     }
 }

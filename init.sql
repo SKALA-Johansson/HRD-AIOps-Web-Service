@@ -35,7 +35,7 @@ USE user_profile_db;
 
 CREATE TABLE IF NOT EXISTS users (
   user_id CHAR(36) PRIMARY KEY,
-  email VARCHAR(255) NOT NULL UNIQUE,
+  username VARCHAR(255) NOT NULL UNIQUE, -- Changed from email to username (Employee ID)
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(50) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -119,6 +119,38 @@ CREATE TABLE IF NOT EXISTS modules (
   CONSTRAINT fk_modules_curriculum FOREIGN KEY (curriculum_id) REFERENCES curriculums(id)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Department Curriculum Mapping Table
+CREATE TABLE IF NOT EXISTS department_curriculum (
+    department_name VARCHAR(50),
+    module_name VARCHAR(100)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO department_curriculum (department_name, module_name) VALUES
+('AI / 데이터 부서', 'SKMS 및 온보딩'),
+('AI / 데이터 부서', '데이터 처리 및 분석 심화'),
+('AI / 데이터 부서', '머신러닝 기초 및 파이프라인'),
+('AI / 데이터 부서', '딥러닝 및 자연어 처리 기초'),
+('AI / 데이터 부서', 'RAG 시스템 구축 실무'),
+('AI / 데이터 부서', 'AIOps 및 API 서빙'),
+('백엔드 개발 부서', 'SKMS 및 온보딩'),
+('백엔드 개발 부서', 'Java 및 객체지향 설계'),
+('백엔드 개발 부서', 'Spring Boot 핵심 로직'),
+('백엔드 개발 부서', '데이터베이스 및 트랜잭션'),
+('백엔드 개발 부서', 'MSA 기반 비동기 통신'),
+('백엔드 개발 부서', '테스트 및 인프라 기초'),
+('프론트엔드 개발 부서', 'SKMS 및 온보딩'),
+('프론트엔드 개발 부서', '모던 자바스크립트 및 TS'),
+('프론트엔드 개발 부서', 'Vue.js 컴포넌트 설계'),
+('프론트엔드 개발 부서', '전역 상태 관리 및 라우팅'),
+('프론트엔드 개발 부서', 'API 연동 및 데이터 핸들링'),
+('프론트엔드 개발 부서', '렌더링 최적화 및 배포'),
+('영업 부서', 'SKMS 및 온보딩'),
+('영업 부서', '세일즈 파이프라인 기초'),
+('영업 부서', 'CRM 및 데이터 관리'),
+('영업 부서', '제안 및 프레젠테이션 스킬'),
+('영업 부서', '시장 분석 및 계약 협상'),
+('영업 부서', 'Global Biz English');
 
 -- ---------------------------------------------------------------------
 -- 5) AI Tutor Agent domain (active)
@@ -241,3 +273,18 @@ CREATE TABLE IF NOT EXISTS approvals (
   INDEX idx_approvals_target (target_type, target_id),
   INDEX idx_approvals_approver (approver_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- 7) Additional Dummy Data
+-- ---------------------------------------------------------------------
+USE curriculum_db;
+
+-- AI Development Team Specific Sample
+INSERT INTO curriculums (id, goal_id, employee_id, employee_name, department, role, career_level, title, description, total_weeks, status)
+VALUES ('cur-ai-dept-001', 'global-goal-001', 'DEPARTMENT_WIDE', 'AI Development Team', 'AI / 데이터 부서', 'Common', 'JUNIOR', 'AI개발팀 온보딩 커리큘럼', 'AI개발팀 필수 역량 강화 과정', 4, 'active');
+
+INSERT INTO modules (id, curriculum_id, week_number, title, description, content, learning_objectives, resources, assignments, estimated_hours)
+VALUES ('mod-dbms-001', 'cur-ai-dept-001', 1, 'DBMS 기초 및 실습', 'RDB 개념 및 SQL 실습', 'SQL 기초/심화', 'SQL 작성 능력 확보', 'DBMS 교육 자료', 'DB 쿼리 작성 과제', 8);
+
+INSERT INTO modules (id, curriculum_id, week_number, title, description, content, learning_objectives, resources, assignments, estimated_hours)
+VALUES ('mod-eng-001', 'cur-ai-dept-001', 2, 'AGS_Global Biz English', '글로벌 비즈니스 영어', '비즈니스 메일/회의', '영어 의사소통 능력 배양', 'English Guide', '롤플레잉 과제', 6);
