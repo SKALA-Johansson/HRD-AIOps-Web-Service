@@ -18,11 +18,6 @@
           <button type="button" class="icon-close" aria-label="닫기" @click="dock.close">×</button>
         </header>
 
-        <div class="panel-settings">
-          <label class="mini-label">curriculumId</label>
-          <input v-model.number="form.curriculumId" type="number" class="mini-input" />
-        </div>
-
         <div ref="threadEl" class="thread" aria-live="polite">
           <p v-if="!messages.length" class="thread-empty">
             학습·사내 규정에 대해 질문해 보세요. (예: 우리 팀 코딩 컨벤션은 뭐예요?)
@@ -78,7 +73,7 @@
 </template>
 
 <script setup>
-import { nextTick, reactive, ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTutorDockStore } from '@/store/tutorDock.js'
 import { useAuthStore } from '@/store/auth.js'
@@ -88,9 +83,6 @@ const dock = useTutorDockStore()
 const { isOpen } = storeToRefs(dock)
 const auth = useAuthStore()
 
-const form = reactive({
-  curriculumId: 301
-})
 const draft = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -122,7 +114,6 @@ async function submit() {
   try {
     const res = await tutorApi.ask({
       userId: uid,
-      curriculumId: form.curriculumId,
       question: q
     })
     const d = res.data?.data
@@ -214,26 +205,6 @@ async function submit() {
 .icon-close:hover {
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
-}
-
-.panel-settings {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--color-border);
-  font-size: 12px;
-}
-.mini-label {
-  color: var(--color-text-muted);
-  white-space: nowrap;
-}
-.mini-input {
-  width: 88px;
-  padding: 6px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
 }
 
 .thread {
