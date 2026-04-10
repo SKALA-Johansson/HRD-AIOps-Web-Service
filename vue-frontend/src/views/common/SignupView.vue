@@ -25,10 +25,10 @@
         />
 
         <label class="form-label">역할</label>
-        <select v-model="form.role" class="form-input">
-          <option value="EMPLOYEE">신입사원 (EMPLOYEE)</option>
-          <option value="HR">HR 담당자 (HR)</option>
-        </select>
+        <div class="role-box">
+          <span class="role-pill">HR 담당자 (HR)</span>
+          <span class="role-hint">신입사원 계정은 커리큘럼 등록 시 자동 생성/등록될 예정입니다.</span>
+        </div>
 
         <p v-if="error" class="error">{{ error }}</p>
         <p v-if="success" class="success">{{ success }}</p>
@@ -56,7 +56,7 @@ const form = reactive({
   name: '',
   email: '',
   password: '',
-  role: 'EMPLOYEE'
+  role: 'HR'
 })
 const loading = ref(false)
 const error = ref('')
@@ -68,6 +68,10 @@ const router = useRouter()
 async function submit() {
   error.value = ''
   success.value = ''
+  if (form.role === 'EMPLOYEE') {
+    error.value = '신입사원(EMPLOYEE) 회원가입은 현재 비활성화되어 있습니다.'
+    return
+  }
   loading.value = true
   try {
     const res = await auth.signup({
@@ -151,6 +155,33 @@ async function submit() {
 .form-input:focus {
   outline: none;
   border-color: var(--color-primary);
+}
+.role-box {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: var(--color-bg-tertiary);
+  display: grid;
+  gap: 6px;
+}
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.role-hint {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
 }
 .btn-full {
   width: 100%;

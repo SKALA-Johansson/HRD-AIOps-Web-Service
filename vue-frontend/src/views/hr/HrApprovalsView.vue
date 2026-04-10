@@ -2,35 +2,24 @@
   <div class="page">
     <AppHeader />
     <main class="main">
-      <section class="flow-head">
-        <h1 class="page-title">커리큘럼 (생성 → 대기 목록 → 검토/승인)</h1>
-        <p class="page-desc">
-          1) PDF 업로드로 생성 요청 → 2) 승인 대기 목록에서 선택 → 3) 구성 확인 후 승인·반려·수정·삭제
-        </p>
-      </section>
-
-      <section class="create-panel" aria-label="1) 커리큘럼 생성">
-        <div class="create-head">
-          <h2 class="panel-title">1) PDF로 커리큘럼 생성</h2>
-          <div class="create-actions">
-            <button type="button" class="btn btn-outline btn-sm" :disabled="genLoading" @click="clearGenFile">
-              초기화
-            </button>
-            <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              :disabled="genLoading || !genSelectedFile"
-              @click="runGenerateFromPdf"
-            >
-              {{ genLoading ? '생성 중…' : '생성 요청' }}
-            </button>
+      <section v-if="mode === 'create'" class="panel">
+        <header class="head">
+          <div>
+            <h1 class="page-title">PDF로 커리큘럼 생성</h1>
+            <p class="page-desc">
+              사원 정보를 입력하고 PDF를 업로드한 뒤 <strong>커리큘럼 생성</strong>을 누르면 생성 요청이 전송되고, 곧바로
+              <strong>승인/삭제</strong> 화면으로 전환됩니다. (<code>POST /curriculums/generate-from-pdf</code>)
+            </p>
           </div>
-        </div>
-
-        <p class="hint">
-          <code>POST /curriculums/generate-from-pdf</code> (multipart, 필드: <code>file</code>) — 버튼을 눌러야 요청이
-          전송됩니다.
-        </p>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="genLoading || !genSelectedFile"
+            @click="runGenerateFromPdf"
+          >
+            {{ genLoading ? '생성 중…' : '커리큘럼 생성' }}
+          </button>
+        </header>
 
         <section
           class="drop-zone"
@@ -59,198 +48,97 @@
 
         <div class="meta-grid">
           <div>
-            <label class="form-label">계열사 (company)</label>
-            <input v-model="genMeta.company" class="form-input" :disabled="genLoading" />
+            <label class="form-label">사원 이름</label>
+            <input v-model="genMeta.name" class="form-input" :disabled="genLoading" placeholder="예: 김신입" />
           </div>
           <div>
-            <label class="form-label">직무군 (jobFamily)</label>
-            <input v-model="genMeta.jobFamily" class="form-input" :disabled="genLoading" />
-          </div>
-          <div class="span2">
-            <label class="form-label">커리큘럼 제목 힌트 (title)</label>
+            <label class="form-label">사원 번호</label>
             <input
-              v-model="genMeta.title"
+              v-model="genMeta.employeeNo"
               class="form-input"
-              placeholder="비우면 파일명을 사용합니다"
               :disabled="genLoading"
+              inputmode="numeric"
+              placeholder="예: 20260001"
             />
           </div>
-        </div>
-
-        <p v-if="genOk" class="success">{{ genOk }}</p>
-        <p v-if="genErr" class="error">{{ genErr }}</p>
-        <pre v-if="genResultJson" class="pre">{{ genResultJson }}</pre>
-      </section>
-
-      <section v-if="quickId != null" class="quick-panel" aria-label="빠른 승인">
-        <div class="quick-head">
-          <h2 class="panel-title">2) 생성된 커리큘럼 빠른 결정</h2>
-          <span class="pill">ID {{ quickId }}</span>
-        </div>
-        <p class="hint">
-          방금 생성된 커리큘럼을 바로 검토하고 <strong>승인</strong> 또는 <strong>삭제</strong>를 선택하세요.
-        </p>
-        <div class="quick-actions">
-          <button type="button" class="btn btn-primary btn-sm" :disabled="actionBusy || loadingDetail" @click="doApprove">
-            승인
-          </button>
-          <button type="button" class="btn btn-ghost btn-sm danger" :disabled="actionBusy || loadingDetail" @click="doDelete">
-            삭제
-          </button>
-          <button type="button" class="btn btn-outline btn-sm" :disabled="loadingDetail" @click="scrollToReview">
-            구성 확인
-          </button>
-          <button type="button" class="btn btn-outline btn-sm" :disabled="loadingList" @click="loadPendingCurricula">
-            대기 목록 보기
-          </button>
-        </div>
-      </section>
-
-      <header class="page-head">
-        <div>
-          <h2 class="panel-title">2) 승인 대기 목록</h2>
-          <p class="page-desc">
-            AI(PDF)가 생성한 커리큘럼은 <code>GET /curriculums?status=PENDING_APPROVAL</code> 등으로 조회한 뒤, 카드를
-            선택해 내용을 검토하고 승인·반려·수정·삭제합니다. 승인:
-            <code>POST /approvals/curriculums/{id}</code>
-          </p>
-        </div>
-        <button type="button" class="btn btn-outline btn-sm" :disabled="loadingList" @click="loadPendingCurricula">
-          {{ loadingList ? '불러오는 중…' : '목록 새로고침' }}
-        </button>
-      </header>
-
-      <p v-if="usedMockList" class="mock-hint">개발 미리보기: 승인 대기 목록은 더미입니다.</p>
-      <p v-if="listErr" class="error banner-err">{{ listErr }}</p>
-
-      <div class="workspace">
-        <section class="list-panel" aria-label="승인 대기 커리큘럼 목록">
-          <h3 class="panel-title">승인 대기 커리큘럼</h3>
-          <p v-if="!loadingList && !curricula.length" class="empty">대기 중인 커리큘럼이 없습니다.</p>
-          <ul v-else class="card-list">
-            <li v-for="c in curricula" :key="c.curriculumId">
-              <button
-                type="button"
-                class="cur-card"
-                :class="{ selected: selectedId === c.curriculumId }"
-                @click="selectCurriculum(c)"
-              >
-                <div class="cur-card-top">
-                  <span class="cur-title">{{ c.title || `커리큘럼 #${c.curriculumId}` }}</span>
-                  <span class="badge" :class="badgeClass(c.status)">{{ c.status || '—' }}</span>
-                </div>
-                <p class="cur-summary">{{ c.summary || formatSummary(c) }}</p>
-                <div class="cur-meta">
-                  <span v-if="c.sourceType === 'PDF_AI'" class="meta-pill">PDF·AI 생성</span>
-                  <span v-if="c.createdAt" class="meta-date">{{ formatDate(c.createdAt) }}</span>
-                  <span class="meta-id">ID {{ c.curriculumId }}</span>
-                </div>
-              </button>
-            </li>
-          </ul>
-        </section>
-
-        <section class="detail-panel" aria-label="선택한 커리큘럼 상세">
-          <template v-if="!selectedId">
-            <p class="placeholder">왼쪽 목록에서 커리큘럼을 선택하면 구성과 내용을 확인할 수 있습니다.</p>
-          </template>
-          <template v-else>
-            <div v-if="loadingDetail" class="muted">상세 불러오는 중…</div>
-            <template v-else>
-              <div class="detail-head" ref="reviewEl">
-                <h3 class="panel-title">3) 검토 · {{ detail.title }}</h3>
-                <span class="badge" :class="badgeClass(detail.status)">{{ detail.status || '—' }}</span>
-              </div>
-
-              <div v-if="!editMode" class="module-block">
-                <h3 class="sub">주차·모듈 구성</h3>
-                <ul class="modules">
-                  <li v-for="m in detail.modules" :key="m.moduleId ?? m.week + '-' + m.title" class="mod-row">
-                    <span class="week">{{ m.week }}주차</span>
-                    <span class="mod-title">{{ m.title }}</span>
-                  </li>
-                  <li v-if="!detail.modules?.length" class="muted">모듈 정보 없음</li>
-                </ul>
-              </div>
-
-              <div v-else class="edit-block">
-                <label class="form-label">제목</label>
-                <input v-model="draftTitle" class="form-input" />
-                <label class="form-label">모듈 (JSON 배열 — moduleId, week, title)</label>
-                <textarea v-model="draftModulesJson" class="form-input area" rows="12" spellcheck="false" />
-                <p v-if="editParseErr" class="error">{{ editParseErr }}</p>
-              </div>
-
-              <div class="comment-block">
-                <label class="form-label">승인/반려 코멘트</label>
-                <input v-model="currComment" class="form-input" placeholder="검토 의견을 입력하세요" />
-              </div>
-
-              <p v-if="actionErr" class="error">{{ actionErr }}</p>
-              <p v-if="actionOk" class="success">{{ actionOk }}</p>
-
-              <div class="actions">
-                <template v-if="!editMode">
-                  <button type="button" class="btn btn-primary btn-sm" :disabled="actionBusy" @click="doApprove">
-                    승인
-                  </button>
-                  <button type="button" class="btn btn-outline btn-sm" :disabled="actionBusy" @click="doReject">
-                    반려
-                  </button>
-                  <button type="button" class="btn btn-outline btn-sm" :disabled="actionBusy" @click="startEdit">
-                    수정
-                  </button>
-                  <button type="button" class="btn btn-ghost btn-sm danger" :disabled="actionBusy" @click="doDelete">
-                    삭제
-                  </button>
-                </template>
-                <template v-else>
-                  <button type="button" class="btn btn-primary btn-sm" :disabled="actionBusy" @click="saveEdit">
-                    저장
-                  </button>
-                  <button type="button" class="btn btn-ghost btn-sm" :disabled="actionBusy" @click="cancelEdit">
-                    취소
-                  </button>
-                </template>
-              </div>
-            </template>
-          </template>
-        </section>
-      </div>
-
-      <details class="extra">
-        <summary>목표 승인 · 승인 이력 (기존 API)</summary>
-        <section class="card">
-          <h2 class="sub">목표 승인</h2>
-          <label class="form-label">goalId</label>
-          <input v-model="goalId" class="form-input narrow" />
-          <label class="form-label">코멘트</label>
-          <input v-model="goalComment" class="form-input" />
-          <div class="row">
-            <button type="button" class="btn btn-primary btn-sm" @click="approveGoal">승인</button>
+          <div>
+            <label class="form-label">생년월일(6자리)</label>
+            <input
+              v-model="genMeta.birthDate6"
+              class="form-input"
+              :disabled="genLoading"
+              inputmode="numeric"
+              placeholder="예: 990101"
+            />
           </div>
-        </section>
-        <section class="card">
-          <h2 class="sub">승인 이력 조회</h2>
-          <label class="form-label">resourceType</label>
-          <select v-model="histType" class="form-input narrow">
-            <option value="CURRICULUM">CURRICULUM</option>
-            <option value="GOAL">GOAL</option>
-          </select>
-          <label class="form-label">resourceId</label>
-          <input v-model="histResourceId" class="form-input narrow" />
-          <button type="button" class="btn btn-outline btn-sm" @click="loadHistory">조회</button>
-          <pre v-if="historyJson" class="pre">{{ historyJson }}</pre>
-        </section>
-      </details>
+          <div class="span2">
+            <label class="form-label">부서</label>
+            <select v-model="genMeta.department" class="form-input" :disabled="genLoading">
+              <option value="">선택</option>
+              <option value="AI">AI</option>
+              <option value="BACKEND">BACKEND</option>
+              <option value="FRONTEND">FRONTEND</option>
+              <option value="DATA">DATA</option>
+              <option value="DEVOPS">DEVOPS</option>
+            </select>
+          </div>
+        </div>
 
-      <p v-if="err" class="error footer-err">{{ err }}</p>
+        <p v-if="genErr" class="error">{{ genErr }}</p>
+        <p v-if="genOk" class="success">{{ genOk }}</p>
+      </section>
+
+      <section v-else class="panel">
+        <header class="head">
+          <div>
+            <h1 class="page-title">커리큘럼 승인</h1>
+            <p class="page-desc">
+              생성된 커리큘럼을 확인하고 <strong>승인</strong> 또는 <strong>삭제</strong>를 결정합니다.
+              (<code>POST /approvals/curriculums/{id}</code>, <code>DELETE /curriculums/{id}</code>)
+            </p>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn btn-outline btn-sm" :disabled="actionBusy" @click="backToCreate">
+              다른 PDF로 생성
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" :disabled="actionBusy" @click="doApprove">승인</button>
+            <button type="button" class="btn btn-ghost btn-sm danger" :disabled="actionBusy" @click="doDelete">
+              삭제
+            </button>
+          </div>
+        </header>
+
+        <div v-if="loadingDetail" class="muted">불러오는 중…</div>
+        <p v-if="actionErr" class="error">{{ actionErr }}</p>
+        <p v-if="actionOk" class="success">{{ actionOk }}</p>
+
+        <div v-if="!loadingDetail" class="card">
+          <p class="meta">
+            curriculumId: <strong>{{ detail.curriculumId }}</strong>
+            <span v-if="detail.status">/ status: {{ detail.status }}</span>
+          </p>
+          <h2 class="title">{{ detail.title || '커리큘럼' }}</h2>
+          <h3 class="sub">주차·모듈 구성</h3>
+          <ul class="modules">
+            <li v-for="m in detail.modules" :key="m.moduleId ?? m.week + '-' + m.title" class="mod-row">
+              <span class="week">{{ m.week }}주차</span>
+              <span class="mod-title">{{ m.title }}</span>
+            </li>
+            <li v-if="!detail.modules?.length" class="muted">모듈 정보 없음</li>
+          </ul>
+        </div>
+
+        <div class="comment-block">
+          <label class="form-label">승인 코멘트 (선택)</label>
+          <input v-model="currComment" class="form-input" placeholder="예: 검토 완료" :disabled="actionBusy" />
+        </div>
+      </section>
     </main>
   </div>
 </template>
 
 <script setup>
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import { approvalsApi } from '@/api/approvals.js'
 import { curriculumsApi } from '@/api/curriculums.js'
@@ -259,6 +147,8 @@ import { MOCK_PENDING_CURRICULA } from '@/data/devMock.js'
 
 const auth = useAuthStore()
 
+const mode = ref('create') // 'create' | 'review'
+
 const genFileInput = ref(null)
 const genDragOver = ref(false)
 const genLoading = ref(false)
@@ -266,57 +156,33 @@ const genSelectedFile = ref(null)
 const genSelectedName = ref('')
 const genErr = ref('')
 const genOk = ref('')
-const genResultJson = ref('')
-const quickId = ref(null)
-const reviewEl = ref(null)
 const genMeta = reactive({
-  company: 'SK hynix',
-  jobFamily: 'Backend',
-  title: ''
+  name: '',
+  employeeNo: '',
+  birthDate6: '',
+  department: ''
 })
 
-const loadingList = ref(false)
-const loadingDetail = ref(false)
-const usedMockList = ref(false)
-const listErr = ref('')
-const curricula = ref([])
-
 const selectedId = ref(null)
+const loadingDetail = ref(false)
 const detail = reactive({
   curriculumId: null,
   title: '',
   status: '',
-  summary: '',
-  sourceType: '',
-  createdAt: '',
   goalId: null,
   modules: []
 })
 
-const currComment = ref('검토 완료 — 커리큘럼 구성이 교육 목표와 부합합니다.')
-const editMode = ref(false)
-const draftTitle = ref('')
-const draftModulesJson = ref('')
-const editParseErr = ref('')
-
+const currComment = ref('검토 완료')
 const actionBusy = ref(false)
 const actionErr = ref('')
 const actionOk = ref('')
-
-const goalId = ref('101')
-const goalComment = ref('적절한 목표입니다.')
-const histType = ref('CURRICULUM')
-const histResourceId = ref('301')
-const historyJson = ref('')
-const err = ref('')
 
 function clearGenFile() {
   genSelectedFile.value = null
   genSelectedName.value = ''
   genErr.value = ''
   genOk.value = ''
-  genResultJson.value = ''
-  quickId.value = null
   if (genFileInput.value) genFileInput.value.value = ''
 }
 
@@ -328,8 +194,6 @@ function pickGenPdf(file) {
     return
   }
   genErr.value = ''
-  genOk.value = ''
-  genResultJson.value = ''
   genSelectedFile.value = file
   genSelectedName.value = file.name
 }
@@ -345,269 +209,114 @@ function onGenDrop(e) {
   pickGenPdf(f)
 }
 
-async function runGenerateFromPdf() {
-  const file = genSelectedFile.value
-  if (!file || genLoading.value) return
-  genLoading.value = true
-  genErr.value = ''
-  genOk.value = ''
-  genResultJson.value = ''
-  try {
-    const fd = new FormData()
-    fd.append('file', file)
-    if (genMeta.company.trim()) fd.append('company', genMeta.company.trim())
-    if (genMeta.jobFamily.trim()) fd.append('jobFamily', genMeta.jobFamily.trim())
-    const t = genMeta.title.trim()
-    fd.append('title', t || file.name.replace(/\.pdf$/i, ''))
-
-    const res = await curriculumsApi.generateFromPdf(fd)
-    const data = res.data?.data ?? res.data
-    genResultJson.value = JSON.stringify(data, null, 2)
-    const id =
-      data?.curriculumId ??
-      data?.id ??
-      data?.curriculum?.curriculumId ??
-      data?.curriculum?.id
-    if (id != null) {
-      quickId.value = Number(id)
-      genOk.value = `생성 요청이 접수되었습니다. (curriculumId: ${id}) 바로 승인/삭제를 선택할 수 있습니다.`
-      await loadPendingCurricula()
-      await selectCurriculum({ curriculumId: Number(id), title: data?.title, status: data?.status })
-      await nextTick()
-      scrollToReview()
-    } else {
-      genOk.value = '생성 요청이 접수되었습니다. 응답에 curriculumId가 없어 대기 목록에서 확인이 필요합니다.'
-      await loadPendingCurricula()
-    }
-  } catch (e) {
-    genErr.value =
-      e.response?.data?.message ||
-      e.message ||
-      '요청에 실패했습니다. 게이트웨이에 generate-from-pdf 엔드포인트가 있는지 확인하세요.'
-  } finally {
-    genLoading.value = false
-  }
-}
-
-function scrollToReview() {
-  const el = reviewEl.value
-  if (el && typeof el.scrollIntoView === 'function') {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-}
-
-function normalizeListPayload(res) {
-  const d = res.data?.data ?? res.data
-  if (Array.isArray(d)) return d
-  if (Array.isArray(d?.content)) return d.content
-  if (Array.isArray(d?.items)) return d.items
-  return []
-}
-
-function formatSummary(c) {
-  const n = c.modules?.length ?? c.moduleCount
-  if (n) return `모듈 ${n}개`
-  return '요약 없음'
-}
-
-function formatDate(iso) {
-  if (!iso) return ''
-  try {
-    const d = new Date(iso)
-    return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString('ko-KR')
-  } catch {
-    return String(iso)
-  }
-}
-
-function badgeClass(status) {
-  const s = (status || '').toUpperCase()
-  if (s.includes('PENDING') || s === 'DRAFT') return 'badge-warn'
-  if (s.includes('APPROVE')) return 'badge-ok'
-  if (s.includes('REJECT')) return 'badge-bad'
-  return 'badge-neutral'
-}
-
-async function loadPendingCurricula() {
-  loadingList.value = true
-  listErr.value = ''
-  usedMockList.value = false
-  selectedId.value = null
-  resetDetail()
-  try {
-    const res = await curriculumsApi.list({ status: 'PENDING_APPROVAL' })
-    let rows = normalizeListPayload(res)
-    if (!rows.length) {
-      const res2 = await curriculumsApi.list({ approvalStatus: 'PENDING' })
-      rows = normalizeListPayload(res2)
-    }
-    curricula.value = rows
-    if (!rows.length && auth.isDevPreview) {
-      curricula.value = [...MOCK_PENDING_CURRICULA]
-      usedMockList.value = true
-    }
-  } catch (e) {
-    if (auth.isDevPreview) {
-      curricula.value = [...MOCK_PENDING_CURRICULA]
-      usedMockList.value = true
-      listErr.value = ''
-    } else {
-      listErr.value = e.response?.data?.message || e.message || '목록을 불러오지 못했습니다.'
-      curricula.value = []
-    }
-  } finally {
-    loadingList.value = false
-  }
-}
-
 function resetDetail() {
+  selectedId.value = null
   detail.curriculumId = null
   detail.title = ''
   detail.status = ''
-  detail.summary = ''
-  detail.sourceType = ''
-  detail.createdAt = ''
   detail.goalId = null
   detail.modules = []
-  editMode.value = false
-  draftTitle.value = ''
-  draftModulesJson.value = ''
-  editParseErr.value = ''
   actionErr.value = ''
   actionOk.value = ''
 }
 
 function applyDetailFromObject(obj) {
-  detail.curriculumId = obj.curriculumId ?? obj.id
+  detail.curriculumId = obj.curriculumId ?? obj.id ?? selectedId.value
   detail.title = obj.title ?? ''
   detail.status = obj.status ?? ''
-  detail.summary = obj.summary ?? ''
-  detail.sourceType = obj.sourceType ?? ''
-  detail.createdAt = obj.createdAt ?? ''
   detail.goalId = obj.goalId ?? null
   detail.modules = Array.isArray(obj.modules) ? [...obj.modules] : []
 }
 
-async function selectCurriculum(c) {
-  const id = c.curriculumId ?? c.id
+async function loadDetailById(id) {
   if (id == null) return
   selectedId.value = id
+  loadingDetail.value = true
   actionErr.value = ''
   actionOk.value = ''
-  editMode.value = false
-  applyDetailFromObject(c)
-  loadingDetail.value = true
   try {
     const res = await curriculumsApi.get(id)
     const d = res.data?.data ?? res.data
-    if (d && typeof d === 'object') {
-      applyDetailFromObject({ ...c, ...d, curriculumId: d.curriculumId ?? d.id ?? id })
-    }
+    if (d && typeof d === 'object') applyDetailFromObject(d)
   } catch {
-    /* 목록에 모듈이 있으면 그대로 사용 */
-    if (!detail.modules?.length && auth.isDevPreview) {
+    if (auth.isDevPreview) {
       const fromMock = MOCK_PENDING_CURRICULA.find((x) => String(x.curriculumId) === String(id))
-      if (fromMock) applyDetailFromObject(fromMock)
+      if (fromMock) {
+        applyDetailFromObject(fromMock)
+      } else {
+        applyDetailFromObject({
+          curriculumId: id,
+          title: `더미 커리큘럼 #${id} (개발 미리보기)`,
+          status: 'PENDING_APPROVAL',
+          modules: [
+            { moduleId: 9001, week: 1, title: '오리엔테이션 · 환경 설정' },
+            { moduleId: 9002, week: 2, title: '기초 실습 · 과제' },
+            { moduleId: 9003, week: 3, title: '심화 · 미니 프로젝트' }
+          ]
+        })
+      }
     }
   } finally {
     loadingDetail.value = false
   }
 }
 
-function startEdit() {
-  editMode.value = true
-  draftTitle.value = detail.title
-  draftModulesJson.value = JSON.stringify(detail.modules ?? [], null, 2)
-  editParseErr.value = ''
-}
-
-function cancelEdit() {
-  editMode.value = false
-  editParseErr.value = ''
-}
-
-async function saveEdit() {
-  editParseErr.value = ''
-  let modules
+async function runGenerateFromPdf() {
+  const file = genSelectedFile.value
+  if (!file || genLoading.value) return
+  genLoading.value = true
+  genErr.value = ''
+  genOk.value = ''
   try {
-    modules = JSON.parse(draftModulesJson.value || '[]')
-  } catch {
-    editParseErr.value = '모듈 JSON 형식이 올바르지 않습니다.'
-    return
-  }
-  if (!Array.isArray(modules)) {
-    editParseErr.value = '모듈은 배열이어야 합니다.'
-    return
-  }
-  actionBusy.value = true
-  actionErr.value = ''
-  actionOk.value = ''
-  const id = selectedId.value
-  try {
-    await curriculumsApi.update(id, { title: draftTitle.value, modules })
-    detail.title = draftTitle.value
-    detail.modules = modules
-    const idx = curricula.value.findIndex((x) => String(x.curriculumId ?? x.id) === String(id))
-    if (idx >= 0) {
-      curricula.value[idx] = { ...curricula.value[idx], title: draftTitle.value, modules }
-    }
-    actionOk.value = '수정 사항이 저장되었습니다.'
-    editMode.value = false
+    const fd = new FormData()
+    fd.append('file', file)
+    if (genMeta.name.trim()) fd.append('name', genMeta.name.trim())
+    if (genMeta.employeeNo.trim()) fd.append('employeeNo', genMeta.employeeNo.trim())
+    if (genMeta.birthDate6.trim()) fd.append('birthDate6', genMeta.birthDate6.trim())
+    if (genMeta.department.trim()) fd.append('department', genMeta.department.trim())
+    const autoTitle = [genMeta.department, genMeta.name, genMeta.employeeNo && `(${genMeta.employeeNo})`]
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+    fd.append('title', autoTitle || file.name.replace(/\.pdf$/i, ''))
+
+    const res = await curriculumsApi.generateFromPdf(fd)
+    const data = res.data?.data ?? res.data
+    const id = data?.curriculumId ?? data?.id ?? data?.curriculum?.curriculumId ?? data?.curriculum?.id
+    if (id == null) throw new Error('응답에 curriculumId가 없습니다.')
+
+    resetDetail()
+    mode.value = 'review'
+    await loadDetailById(id)
   } catch (e) {
     if (auth.isDevPreview) {
-      detail.title = draftTitle.value
-      detail.modules = modules
-      const idx = curricula.value.findIndex((x) => String(x.curriculumId ?? x.id) === String(id))
-      if (idx >= 0) {
-        curricula.value[idx] = { ...curricula.value[idx], title: draftTitle.value, modules }
-      }
-      actionOk.value = '개발 미리보기: API 없이 로컬에만 반영했습니다.'
-      editMode.value = false
+      genOk.value = '개발 미리보기: 생성 요청을 시뮬레이션했습니다. (승인 화면으로 전환)'
+      resetDetail()
+      mode.value = 'review'
+      await loadDetailById(401)
     } else {
-      actionErr.value = e.response?.data?.message || e.message || '저장에 실패했습니다.'
+      genErr.value =
+        e.response?.data?.message ||
+        e.message ||
+        '요청에 실패했습니다. 게이트웨이에 generate-from-pdf 엔드포인트가 있는지 확인하세요.'
     }
   } finally {
-    actionBusy.value = false
+    genLoading.value = false
   }
 }
 
 async function doApprove() {
-  await submitApproval('APPROVE')
-}
-
-async function doReject() {
-  await submitApproval('REJECT')
-}
-
-async function submitApproval(action) {
   const id = selectedId.value
   if (id == null) return
   actionBusy.value = true
   actionErr.value = ''
   actionOk.value = ''
   try {
-    await approvalsApi.approveCurriculum(id, { action, comment: currComment.value })
-    actionOk.value = action === 'APPROVE' ? '승인 처리되었습니다.' : '반려 처리되었습니다.'
-    if (auth.isDevPreview) {
-      curricula.value = curricula.value.filter((x) => String(x.curriculumId ?? x.id) !== String(id))
-      selectedId.value = null
-      resetDetail()
-    } else {
-      await loadPendingCurricula()
-      if (!curricula.value.some((x) => String(x.curriculumId ?? x.id) === String(id))) {
-        selectedId.value = null
-        resetDetail()
-      }
-    }
+    await approvalsApi.approveCurriculum(id, { action: 'APPROVE', comment: currComment.value || '' })
+    actionOk.value = '승인 처리되었습니다.'
   } catch (e) {
-    if (auth.isDevPreview) {
-      actionOk.value = `개발 미리보기: ${action} 요청을 시뮬레이션했습니다.`
-      curricula.value = curricula.value.filter((x) => String(x.curriculumId ?? x.id) !== String(id))
-      selectedId.value = null
-      resetDetail()
-    } else {
-      actionErr.value = e.response?.data?.message || e.message || '처리에 실패했습니다.'
-    }
+    if (auth.isDevPreview) actionOk.value = '개발 미리보기: 승인 처리 시뮬레이션'
+    else actionErr.value = e.response?.data?.message || e.message || '승인에 실패했습니다.'
   } finally {
     actionBusy.value = false
   }
@@ -616,26 +325,18 @@ async function submitApproval(action) {
 async function doDelete() {
   const id = selectedId.value
   if (id == null) return
-  if (!window.confirm(`커리큘럼 ${id}를 삭제할까요? 이 작업은 되돌릴 수 없을 수 있습니다.`)) return
+  if (!window.confirm(`커리큘럼 ${id}를 삭제할까요?`)) return
   actionBusy.value = true
   actionErr.value = ''
   actionOk.value = ''
   try {
     await curriculumsApi.remove(id)
     actionOk.value = '삭제되었습니다.'
-    if (auth.isDevPreview) {
-      curricula.value = curricula.value.filter((x) => String(x.curriculumId ?? x.id) !== String(id))
-    } else {
-      await loadPendingCurricula()
-    }
-    selectedId.value = null
-    resetDetail()
+    backToCreate()
   } catch (e) {
     if (auth.isDevPreview) {
-      curricula.value = curricula.value.filter((x) => String(x.curriculumId ?? x.id) !== String(id))
-      actionOk.value = '개발 미리보기: 목록에서 제거했습니다.'
-      selectedId.value = null
-      resetDetail()
+      actionOk.value = '개발 미리보기: 삭제 처리 시뮬레이션'
+      backToCreate()
     } else {
       actionErr.value = e.response?.data?.message || e.message || '삭제에 실패했습니다.'
     }
@@ -644,32 +345,11 @@ async function doDelete() {
   }
 }
 
-async function approveGoal() {
-  err.value = ''
-  try {
-    await approvalsApi.approveGoal(goalId.value, { action: 'APPROVE', comment: goalComment.value })
-  } catch (e) {
-    err.value = e.response?.data?.message || e.message
-  }
+function backToCreate() {
+  mode.value = 'create'
+  clearGenFile()
+  resetDetail()
 }
-
-async function loadHistory() {
-  err.value = ''
-  historyJson.value = ''
-  try {
-    const res = await approvalsApi.list({
-      resourceType: histType.value,
-      resourceId: histResourceId.value
-    })
-    historyJson.value = JSON.stringify(res.data?.data ?? res.data, null, 2)
-  } catch (e) {
-    err.value = e.response?.data?.message || e.message
-  }
-}
-
-onMounted(() => {
-  loadPendingCurricula()
-})
 </script>
 
 <style scoped>
@@ -678,102 +358,42 @@ onMounted(() => {
   background: var(--color-bg-secondary);
 }
 .main {
-  max-width: 1100px;
+  max-width: 980px;
   margin: 0 auto;
   padding: 28px 24px 64px;
 }
-.flow-head {
-  margin-bottom: 18px;
+.panel {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
 }
-.flow-head .page-title {
-  margin-bottom: 6px;
-}
-.flow-head .page-desc {
-  margin: 0;
-  max-width: 900px;
-}
-.page-head {
+.head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 .page-title {
   font-size: 1.5rem;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin: 0 0 6px;
 }
 .page-desc {
   font-size: 14px;
   color: var(--color-text-secondary);
   line-height: 1.55;
-  max-width: 720px;
+  margin: 0;
+  max-width: 860px;
 }
 .page-desc code {
-  font-size: 12px;
-  background: var(--color-bg-tertiary);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.create-panel {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  margin-bottom: 18px;
-}
-.quick-panel {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  margin-bottom: 18px;
-}
-.quick-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 6px;
-}
-.quick-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-.pill {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-secondary);
-}
-.create-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-}
-.create-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.hint {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  margin: 0 0 12px;
-  line-height: 1.5;
-}
-.hint code {
   font-size: 12px;
   background: var(--color-bg-tertiary);
   padding: 2px 6px;
@@ -798,7 +418,7 @@ onMounted(() => {
   cursor: pointer;
   background: var(--color-bg-secondary);
   transition: var(--transition);
-  margin-bottom: 12px;
+  margin: 14px 0 12px;
 }
 .drop-zone:hover:not(.disabled),
 .drop-zone.dragging:not(.disabled) {
@@ -854,148 +474,41 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
-.mock-hint {
+.form-label {
+  display: block;
   font-size: 13px;
-  color: var(--color-text-muted);
-  margin-bottom: 12px;
-}
-.banner-err {
-  margin-bottom: 12px;
-}
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(300px, 380px) 1fr;
-  gap: 24px;
-  align-items: start;
-}
-@media (max-width: 900px) {
-  .workspace {
-    grid-template-columns: 1fr;
-  }
-}
-.panel-title {
-  font-size: 15px;
-  font-weight: 700;
-  margin: 0 0 12px;
-}
-.list-panel,
-.detail-panel {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  min-height: 200px;
-}
-.card-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.cur-card {
-  width: 100%;
-  text-align: left;
-  padding: 14px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-secondary);
-  cursor: pointer;
-  transition: var(--transition);
-}
-.cur-card:hover {
-  border-color: var(--color-border-hover);
-}
-.cur-card.selected {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary);
-  background: var(--color-primary-light);
-}
-.cur-card-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
   margin-bottom: 6px;
 }
-.cur-title {
-  font-weight: 600;
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   font-size: 14px;
-  color: var(--color-text-primary);
-  line-height: 1.35;
 }
-.cur-summary {
+.comment-block {
+  margin-top: 16px;
+}
+.card {
+  margin-top: 14px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+.meta {
   font-size: 13px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
   margin: 0 0 8px;
-  line-height: 1.4;
 }
-.cur-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-.meta-pill {
-  background: var(--color-bg-tertiary);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-weight: 500;
-}
-.badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-.badge-warn {
-  background: var(--color-warning-light);
-  color: var(--color-warning);
-}
-.badge-ok {
-  background: var(--color-success-light, #dcfce7);
-  color: var(--color-success, #15803d);
-}
-.badge-bad {
-  background: var(--color-danger-light, #fee2e2);
-  color: var(--color-danger);
-}
-.badge-neutral {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-secondary);
-}
-.empty {
-  font-size: 14px;
-  color: var(--color-text-muted);
-  margin: 0;
-}
-.placeholder {
-  font-size: 14px;
-  color: var(--color-text-muted);
-  margin: 24px 0;
-  text-align: center;
-  line-height: 1.5;
-}
-.detail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-.detail-head .panel-title {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
+.title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin: 0 0 12px;
 }
 .sub {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   margin: 0 0 10px;
 }
 .modules {
@@ -1017,92 +530,19 @@ onMounted(() => {
 }
 .mod-title {
   color: var(--color-text-primary);
-}
-.comment-block {
-  margin-top: 20px;
-}
-.form-label {
-  display: block;
-  font-size: 13px;
-  margin-bottom: 6px;
-}
-.form-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  margin-bottom: 10px;
-  font-size: 14px;
-}
-.form-input.narrow {
-  max-width: 280px;
-}
-.form-input.area {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  resize: vertical;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
-}
-.btn-sm {
-  padding: 8px 16px;
-  font-size: 13px;
-}
-.danger {
-  color: var(--color-danger);
-}
-.muted {
-  color: var(--color-text-muted);
-  font-size: 14px;
-}
-.error {
-  color: var(--color-danger);
-  font-size: 14px;
+  font-weight: 650;
 }
 .success {
   color: var(--color-success);
-  font-size: 14px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
-.extra {
-  margin-top: 32px;
-  padding: 16px;
-  border-radius: var(--radius-lg);
-  border: 1px dashed var(--color-border);
-  background: var(--color-bg-primary);
+.error {
+  color: var(--color-danger);
+  margin-top: 10px;
 }
-.extra summary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  margin-bottom: 12px;
-}
-.card {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  margin-bottom: 16px;
-}
-.card:last-child {
-  margin-bottom: 0;
-}
-.row {
-  margin-top: 8px;
-}
-.pre {
-  margin-top: 12px;
-  padding: 12px;
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-md);
-  font-size: 12px;
-  overflow: auto;
-}
-.footer-err {
-  margin-top: 16px;
+.muted {
+  color: var(--color-text-muted);
+  margin-top: 10px;
 }
 </style>
+
