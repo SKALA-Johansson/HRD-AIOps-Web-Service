@@ -8,7 +8,7 @@ from pydantic import BaseModel
 class TutorSessionRequest(BaseModel):
     """POST /tutor/sessions - api.md §18 (질문+답변 통합)"""
     userId: int
-    curriculumId: str
+    curriculumId: Optional[str] = "0"
     question: str
 
 
@@ -19,6 +19,8 @@ class AssignmentGradeRequest(BaseModel):
 
 
 class QuizGradingRequest(BaseModel):
+    user_id: Optional[str] = "0"
+    module_id: Optional[str] = None
     question: str
     answer: str
     student_answer: str
@@ -26,6 +28,8 @@ class QuizGradingRequest(BaseModel):
 
 
 class AssignmentGradingRequest(BaseModel):
+    user_id: Optional[str] = "0"
+    module_id: Optional[str] = None
     assignment_title: str
     assignment_description: str
     student_submission: str

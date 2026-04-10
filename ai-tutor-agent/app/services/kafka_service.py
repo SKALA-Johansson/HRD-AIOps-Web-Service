@@ -83,6 +83,29 @@ async def publish_anomaly_detected(
     })
 
 
+async def publish_learning_completed(
+    user_id: str,
+    module_id: str | None,
+    completion_type: str,
+    score: float | None = None,
+    max_score: float | None = None,
+    passed: bool | None = None,
+):
+    """
+    완료 이벤트 발행
+    - completion_type: "ASSIGNMENT" | "QUIZ"
+    """
+    event_type = "Learning.AssignmentCompleted" if completion_type == "ASSIGNMENT" else "Learning.QuizCompleted"
+    await publish_event(event_type, {
+        "user_id": user_id,
+        "module_id": module_id,
+        "score": score,
+        "max_score": max_score,
+        "passed": passed,
+        "completed_at": datetime.utcnow().isoformat(),
+    })
+
+
 async def consume_learning_logs(app_state: dict):
     """
     learning-logs 토픽 이벤트 처리:

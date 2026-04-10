@@ -1,6 +1,5 @@
 package com.lecture.auth.service;
 
-import com.lecture.auth.dto.OnboardingEvent;
 import com.lecture.auth.dto.ProfileRequest;
 import com.lecture.auth.model.Profile;
 import com.lecture.auth.model.User;
@@ -15,6 +14,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -49,18 +51,27 @@ public class ProfileService {
         profile.setDepartment(department);
         Profile savedProfile = profileRepository.save(profile);
 
-        // 3. Kafka Event 발행: User.ProfileUpdated
+        // 3. Kafka Event 발행: User.ProfileUpdated (event_type envelope)
         String dummyPdfUrl = "http://dummy-storage.local/resumes/" + username + ".pdf";
 
-        OnboardingEvent event = OnboardingEvent.builder()
-                .eventType("User.ProfileUpdated")
-                .userId(user.getUserId())
-                .username(user.getUsername())
-                .name(user.getName())
-                .department(department)
-                .pdfUrl(dummyPdfUrl)
-                .occurredAt(LocalDateTime.now())
-                .build();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("user_id", user.getUserId());
+        payload.put("username", user.getUsername());
+        payload.put("employee_id", user.getUsername());
+        payload.put("employee_name", user.getName());
+        payload.put("department", department);
+        payload.put("role", "신입");
+        payload.put("career_level", "junior");
+        payload.put("experience_years", 0);
+        payload.put("skills", List.of());
+        payload.put("pdf_url", dummyPdfUrl);
+
+        Map<String, Object> event = new HashMap<>();
+        event.put("event_type", "User.ProfileUpdated");
+        event.put("event_id", user.getUserId());
+        event.put("timestamp", LocalDateTime.now().toString());
+        event.put("source", "auth-server");
+        event.put("payload", payload);
 
         log.info("Publishing onboarding event: {}", event);
         kafkaTemplate.send(TOPIC_ONBOARDING_EVENTS, event);

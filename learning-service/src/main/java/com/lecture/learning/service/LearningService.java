@@ -1,6 +1,5 @@
 package com.lecture.learning.service;
 
-import com.lecture.learning.dto.LearningLogEvent;
 import com.lecture.learning.dto.SubmissionRequest;
 import com.lecture.learning.model.Content;
 import com.lecture.learning.model.Progress;
@@ -15,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,18 +39,7 @@ public class LearningService {
 
     @Transactional
     public List<Map<String, Object>> getModuleContents(String userId, String moduleId) {
-        // 콘텐츠 조회 활동 로그 발행
-        LearningLogEvent event = LearningLogEvent.builder()
-                .eventType("Learning.ActivityLogged")
-                .userId(userId)
-                .moduleId(moduleId)
-                .activityType("CONTENT_VIEWED")
-                .progressRate(10.0)
-                .occurredAt(LocalDateTime.now())
-                .build();
-        
-        log.info("Publishing learning activity event: {}", event);
-        kafkaTemplate.send(TOPIC_LEARNING_LOGS, event);
+        publishLearningLogEvent(userId, moduleId, "CONTENT_VIEWED", 10.0);
 
         List<Content> contents = contentRepository.findByModuleId(moduleId);
         return contents.stream()
@@ -77,17 +66,7 @@ public class LearningService {
         Submission savedSubmission = submissionRepository.save(submission);
 
         // 과제 제출 활동 로그 발행
-        LearningLogEvent event = LearningLogEvent.builder()
-                .eventType("Learning.ActivityLogged")
-                .userId(userId)
-                .moduleId(moduleId)
-                .activityType("ASSIGNMENT_SUBMITTED")
-                .progressRate(100.0)
-                .occurredAt(LocalDateTime.now())
-                .build();
-        
-        log.info("Publishing assignment submission event: {}", event);
-        kafkaTemplate.send(TOPIC_LEARNING_LOGS, event);
+        publishLearningLogEvent(userId, moduleId, "ASSIGNMENT_SUBMITTED", 100.0);
 
         return Map.of(
                 "submissionId", savedSubmission.getSubmissionId(),
@@ -108,5 +87,23 @@ public class LearningService {
                 "completionRate", (int)totalRate,
                 "totalModules", progresses.size()
         );
+    }
+
+    private void publishLearningLogEvent(String userId, String moduleId, String activityType, Double progressRate) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("user_id", userId);
+        payload.put("module_id", moduleId);
+        payload.put("activity_type", activityType);
+        payload.put("progress_rate", progressRate);
+
+        Map<String, Object> event = new HashMap<>();
+        event.put("event_type", "Learning.ActivityLogged");
+        event.put("event_id", "learning-" + System.currentTimeMillis());
+        event.put("timestamp", LocalDateTime.now().toString());
+        event.put("source", "learning-platform-service");
+        event.put("payload", payload);
+
+        log.info("Publishing learning activity event: {}", event);
+        kafkaTemplate.send(TOPIC_LEARNING_LOGS, event);
     }
 }

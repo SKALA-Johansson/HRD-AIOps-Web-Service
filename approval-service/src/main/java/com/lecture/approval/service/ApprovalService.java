@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,13 +37,19 @@ public class ApprovalService {
 
         // 승인된 경우 Kafka 이벤트 발행
         if (Approval.Action.APPROVE.equals(request.getAction())) {
-            Map<String, Object> event = Map.of(
-                "eventType", "Curriculum.Approved",
-                "targetType", savedApproval.getTargetType(),
-                "targetId", savedApproval.getTargetId(),
-                "status", "APPROVED",
-                "occurredAt", LocalDateTime.now()
-            );
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("target_type", savedApproval.getTargetType());
+            payload.put("target_id", savedApproval.getTargetId());
+            payload.put("status", "APPROVED");
+            payload.put("user_id", savedApproval.getApproverId());
+
+            Map<String, Object> event = new HashMap<>();
+            event.put("event_type", "Curriculum.Approved");
+            event.put("event_id", savedApproval.getApprovalId());
+            event.put("timestamp", LocalDateTime.now().toString());
+            event.put("source", "feedback-approval-service");
+            event.put("payload", payload);
+
             log.info("Publishing curriculum approval event: {}", event);
             kafkaTemplate.send(TOPIC_LEARNING_EVENTS, event);
         }

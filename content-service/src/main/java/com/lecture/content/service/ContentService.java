@@ -2,7 +2,6 @@ package com.lecture.content.service;
 
 import com.lecture.content.domain.ContentType;
 import com.lecture.content.domain.EduContent;
-import com.lecture.content.dto.ContentEvent;
 import com.lecture.content.dto.ContentRequest;
 import com.lecture.content.repository.EduContentRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +11,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -38,17 +40,7 @@ public class ContentService {
         
         EduContent savedContent = eduContentRepository.save(content);
 
-        // 2. Kafka Event 발행: Content.Updated (Agent가 임베딩하도록)
-        ContentEvent event = ContentEvent.builder()
-                .eventType("Content.Updated")
-                .contentId(String.valueOf(savedContent.getId()))
-                .title(savedContent.getTitle())
-                .fileUrl(savedContent.getFileUrl())
-                .category(savedContent.getCategory())
-                .build();
-
-        log.info("Publishing content update event: {}", event);
-        kafkaTemplate.send(TOPIC_CONTENT_EVENTS, event);
+        publishContentUpdatedEvent(savedContent);
     }
 
     @Transactional
@@ -61,16 +53,7 @@ public class ContentService {
                 .tags(request.getTags())
                 .build();
         EduContent savedContent = eduContentRepository.save(content);
-
-        ContentEvent event = ContentEvent.builder()
-                .eventType("Content.Updated")
-                .contentId(String.valueOf(savedContent.getId()))
-                .title(savedContent.getTitle())
-                .fileUrl(savedContent.getFileUrl())
-                .category(savedContent.getCategory())
-                .build();
-
-        kafkaTemplate.send(TOPIC_CONTENT_EVENTS, event);
+        publishContentUpdatedEvent(savedContent);
     }
 
     @Transactional(readOnly = true)
@@ -118,5 +101,23 @@ public class ContentService {
             throw new IllegalArgumentException("Content not found: " + contentId);
         }
         eduContentRepository.deleteById(contentId);
+    }
+
+    private void publishContentUpdatedEvent(EduContent content) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("content_id", String.valueOf(content.getId()));
+        payload.put("title", content.getTitle());
+        payload.put("file_url", content.getFileUrl());
+        payload.put("category", content.getCategory());
+
+        Map<String, Object> event = new HashMap<>();
+        event.put("event_type", "Content.Updated");
+        event.put("event_id", "content-" + content.getId());
+        event.put("timestamp", LocalDateTime.now().toString());
+        event.put("source", "content-management-service");
+        event.put("payload", payload);
+
+        log.info("Publishing content update event: {}", event);
+        kafkaTemplate.send(TOPIC_CONTENT_EVENTS, event);
     }
 }

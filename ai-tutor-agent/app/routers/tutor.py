@@ -20,8 +20,12 @@ from app.schemas.tutor import (
 )
 from app.schemas.response import ApiResponse
 from app.services.tutor_agent import ai_tutor_agent
-from app.services.kafka_service import publish_activity_logged, publish_anomaly_detected
-from app.rag.qdrant_client import add_documents, search_relevant_content
+from app.services.kafka_service import (
+    publish_activity_logged,
+    publish_anomaly_detected,
+    publish_learning_completed,
+)
+from app.rag.qdrant_client import add_documents
 
 router = APIRouter(prefix="/tutor", tags=["ai-tutor"])
 
@@ -46,7 +50,13 @@ def _feedback_to_response(f: Feedback) -> FeedbackResponse:
     )
 
 
-async def _run_grading(feedback_id: str, submission_data: dict):
+async def _run_grading(
+    feedback_id: str,
+    submission_data: dict,
+    user_id: str,
+    module_id: str | None,
+    completion_type: str,
+):
     """백그라운드 채점 태스크"""
     from app.database import SessionLocal
     db = SessionLocal()
@@ -71,6 +81,15 @@ async def _run_grading(feedback_id: str, submission_data: dict):
         feedback.set_weaknesses(result.get("weaknesses", []))
         feedback.set_recommendations(result.get("recommendations", []))
         db.commit()
+
+        await publish_learning_completed(
+            user_id=user_id,
+            module_id=module_id,
+            completion_type=completion_type,
+            score=feedback.score,
+            max_score=feedback.max_score,
+            passed=feedback.passed,
+        )
     finally:
         db.close()
 
@@ -86,29 +105,36 @@ async def ask_tutor(request: TutorSessionRequest, db: Session = Depends(get_db))
     api.md §18 - POST /tutor/sessions
     질문을 받아 RAG 기반 답변을 생성하고 세션에 저장합니다.
     """
-    # 세션 생성 또는 기존 세션 조회 (동일 userId+curriculumId면 이어서)
-    session = TutorSession(
-        employee_id=str(request.userId),
-        employee_name=f"User_{request.userId}",
-        curriculum_id=str(request.curriculumId),
-        session_type="chat",
-        status="active",
+    # 기존 활성 세션 재사용 (같은 userId+curriculumId), 없으면 새로 생성
+    session = (
+        db.query(TutorSession)
+        .filter(
+            TutorSession.employee_id == str(request.userId),
+            TutorSession.curriculum_id == str(request.curriculumId),
+            TutorSession.status == "active",
+        )
+        .order_by(TutorSession.started_at.desc())
+        .first()
     )
-    session.set_messages([])
-    db.add(session)
-    db.commit()
-    db.refresh(session)
+    if session is None:
+        session = TutorSession(
+            employee_id=str(request.userId),
+            employee_name=f"User_{request.userId}",
+            curriculum_id=str(request.curriculumId),
+            session_type="chat",
+            status="active",
+        )
+        session.set_messages([])
+        db.add(session)
+        db.commit()
+        db.refresh(session)
 
-    # RAG로 참고 자료 검색
-    try:
-        rag_results = await search_relevant_content(request.question, k=3)
-    except Exception:
-        rag_results = []
+    conversation_history = session.get_messages()
 
-    # AI 답변 생성
-    answer = await ai_tutor_agent.chat(
+    # RAG 검색 + AI 답변 생성 (단일 호출)
+    answer, rag_sources = await ai_tutor_agent.chat(
         user_message=request.question,
-        conversation_history=[],
+        conversation_history=conversation_history,
         module_title=None,
     )
 
@@ -122,7 +148,10 @@ async def ask_tutor(request: TutorSessionRequest, db: Session = Depends(get_db))
         activity_type="chat",
     )
 
-    references = [ReferenceItem(title=f"참고 자료 {i+1}", source="RAG") for i in range(len(rag_results))]
+    references = [
+        ReferenceItem(title=src[:80] if len(src) > 80 else src, source="RAG")
+        for src in rag_sources
+    ]
 
     return ApiResponse.ok(
         data=TutorSessionResponse(sessionId=session.id, answer=answer, references=references),
@@ -159,7 +188,7 @@ async def grade_assignment_async(
 
     feedback = Feedback(
         session_id=session.id,
-        employee_id="0",
+        employee_id=request.user_id or "0",
         feedback_type="assignment_grading",
         summary="채점 진행 중",
     )
@@ -174,12 +203,83 @@ async def grade_assignment_async(
         "rubric": request.rubric,
         "max_score": request.max_score,
     }
-    background_tasks.add_task(_run_grading, feedback.id, submission_data)
+    background_tasks.add_task(
+        _run_grading,
+        feedback.id,
+        submission_data,
+        request.user_id or "0",
+        request.module_id,
+        "ASSIGNMENT",
+    )
 
     return ApiResponse.ok(
         data=GradingStatusResponse(gradingStatus="IN_PROGRESS"),
         code="TUTOR-202",
         message="자동 채점이 시작되었습니다.",
+    )
+
+
+@router.post("/quizzes/{quiz_id}/grade")
+async def grade_quiz(
+    quiz_id: str,
+    request: QuizGradingRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    퀴즈 즉시 채점 후 완료 이벤트를 발행합니다.
+    """
+    result = await ai_tutor_agent.grade_quiz(
+        question=request.question,
+        answer=request.answer,
+        student_answer=request.student_answer,
+        max_score=request.max_score,
+    )
+
+    session = TutorSession(
+        employee_id=request.user_id or "0",
+        employee_name=f"User_{request.user_id or '0'}",
+        module_id=request.module_id,
+        session_type="quiz",
+        status="completed",
+    )
+    session.set_messages([])
+    db.add(session)
+    db.flush()
+
+    feedback = Feedback(
+        session_id=session.id,
+        employee_id=request.user_id or "0",
+        feedback_type="quiz_grading",
+        score=result.get("score"),
+        max_score=result.get("max_score"),
+        passed=result.get("passed"),
+        summary=result.get("summary"),
+        detail=result.get("detail"),
+    )
+    feedback.set_strengths(result.get("strengths", []))
+    feedback.set_weaknesses(result.get("weaknesses", []))
+    feedback.set_recommendations(result.get("recommendations", []))
+    db.add(feedback)
+    db.commit()
+
+    await publish_learning_completed(
+        user_id=request.user_id or "0",
+        module_id=request.module_id,
+        completion_type="QUIZ",
+        score=result.get("score"),
+        max_score=result.get("max_score"),
+        passed=result.get("passed"),
+    )
+
+    return ApiResponse.ok(
+        data={
+            "quizId": quiz_id,
+            "score": result.get("score"),
+            "passed": result.get("passed"),
+            "feedbackId": feedback.id,
+        },
+        code="TUTOR-200",
+        message="퀴즈 채점이 완료되었습니다.",
     )
 
 
