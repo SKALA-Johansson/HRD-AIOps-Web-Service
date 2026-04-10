@@ -9,3 +9,7 @@ out/
 *.env
 /dummy
 /eureka-server/target
+.vscode
+.superpowers
+.gitignore
+api.md
