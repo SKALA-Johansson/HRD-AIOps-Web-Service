@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 @Repository
-public interface ApprovalRepository extends JpaRepository<Approval, Long> {
-    List<Approval> findByResourceTypeAndResourceId(Approval.ResourceType resourceType, Long resourceId);
+public interface ApprovalRepository extends JpaRepository<Approval, String> {
+    List<Approval> findByTargetTypeAndTargetId(String targetType, String targetId);
+    List<Approval> findByStatus(String status);
 }

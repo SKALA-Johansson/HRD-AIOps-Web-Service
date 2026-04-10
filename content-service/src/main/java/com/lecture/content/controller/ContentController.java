@@ -7,8 +7,10 @@ import com.lecture.content.service.ContentService;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -19,6 +21,17 @@ import java.util.List;
 public class ContentController {
 
     private final ContentService contentService;
+
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<Void>> uploadContent(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("title") String title,
+            @RequestParam("category") String category) {
+        log.info("Uploading content: {}, category: {}", title, category);
+        contentService.uploadAndIngest(file, title, category);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Content uploaded and ingested successfully."));
+    }
 
     @PostMapping
     public ResponseEntity<ApiResponse<Void>> registerContent(@RequestBody ContentRequest request) {

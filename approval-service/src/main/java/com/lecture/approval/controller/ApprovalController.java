@@ -18,29 +18,19 @@ public class ApprovalController {
 
     private final ApprovalService approvalService;
 
-    @PostMapping("/goals/{goalId}")
-    public ResponseEntity<ApiResponse<Approval>> approveGoal(
-            @PathVariable Long goalId,
+    @PostMapping("/{approvalId}/confirm")
+    public ResponseEntity<ApiResponse<Approval>> processApproval(
+            @PathVariable String approvalId,
             @RequestBody ApprovalRequest request) {
-        Approval approval = approvalService.approveGoal(goalId, request);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Goal approval recorded", approval));
-    }
-
-    @PostMapping("/curriculums/{curriculumId}")
-    public ResponseEntity<ApiResponse<Approval>> approveCurriculum(
-            @PathVariable Long curriculumId,
-            @RequestBody ApprovalRequest request) {
-        Approval approval = approvalService.approveCurriculum(curriculumId, request);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Curriculum approval recorded", approval));
+        Approval approval = approvalService.processApproval(approvalId, request);
+        return ResponseEntity.ok(ApiResponse.success("Approval processed successfully", approval));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<Approval>>> getApprovals(
-            @RequestParam Approval.ResourceType resourceType,
-            @RequestParam Long resourceId) {
-        List<Approval> approvals = approvalService.getApprovals(resourceType, resourceId);
+            @RequestParam String targetType,
+            @RequestParam String targetId) {
+        List<Approval> approvals = approvalService.getApprovals(targetType, targetId);
         return ResponseEntity.ok(ApiResponse.success(approvals));
     }
 }

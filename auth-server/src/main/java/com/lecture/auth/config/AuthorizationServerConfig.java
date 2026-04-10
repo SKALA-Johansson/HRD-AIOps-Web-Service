@@ -173,23 +173,23 @@ public class AuthorizationServerConfig {
                 return;
             }
 
-            String username = principal.getName();
+            String principalName = principal.getName();
 
             // principal 이름을 기준으로 DB 사용자 조회
-            User user = userRepository.findByEmail(username).orElse(null);
+            User user = userRepository.findByUsername(principalName).orElse(null);
 
-            // principal이 UserDetails인 경우 username(email) 사용
+            // principal이 UserDetails인 경우 username 사용
             if (user == null && principal.getPrincipal() instanceof UserDetails userDetails) {
-                user = userRepository.findByEmail(userDetails.getUsername()).orElse(null);
+                user = userRepository.findByUsername(userDetails.getUsername()).orElse(null);
             }
 
             if (user == null) {
                 return;
             }
 
-            context.getClaims().subject(String.valueOf(user.getId()));
-            context.getClaims().claim("user_id", user.getId());
-            context.getClaims().claim("email", user.getEmail());
+            context.getClaims().subject(user.getUserId());
+            context.getClaims().claim("user_id", user.getUserId());
+            context.getClaims().claim("username", user.getUsername());
             context.getClaims().claim("role", user.getRole().name());
             context.getClaims().claim("name", user.getName());
         };

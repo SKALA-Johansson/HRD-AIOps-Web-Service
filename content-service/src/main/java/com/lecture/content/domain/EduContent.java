@@ -25,6 +25,8 @@ public class EduContent {
 
     private String fileUrl;
 
+    private String vectorDbCollectionName; // Added for VDB mapping
+
     @ElementCollection
     private List<String> tags;
 }

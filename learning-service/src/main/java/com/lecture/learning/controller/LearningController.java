@@ -5,6 +5,7 @@ import com.lecture.learning.dto.SubmissionRequest;
 import com.lecture.learning.service.LearningService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,22 +25,27 @@ public class LearningController {
     }
 
     @GetMapping("/modules/{moduleId}/contents")
-    public ApiResponse<Object> getModuleContents(@PathVariable Long moduleId) {
-        List<Map<String, Object>> data = learningService.getModuleContents(moduleId);
+    public ApiResponse<Object> getModuleContents(Authentication authentication, @PathVariable String moduleId) {
+        String userId = authentication != null ? authentication.getName() : "3021"; // 테스트를 위해 기본값 지정
+        List<Map<String, Object>> data = learningService.getModuleContents(userId, moduleId);
         return ApiResponse.success("학습 콘텐츠 조회 성공", data);
     }
 
     @PostMapping("/assignments/{assignmentId}/submissions")
     public ResponseEntity<ApiResponse<Object>> submitAssignment(
-            @PathVariable Long assignmentId,
+            Authentication authentication,
+            @PathVariable String assignmentId,
+            @RequestParam(value = "moduleId", required = false) String moduleId,
             @RequestBody SubmissionRequest request) {
-        Map<String, Object> data = learningService.submitAssignment(assignmentId, request);
+        String userId = authentication != null ? authentication.getName() : "3021";
+        Map<String, Object> data = learningService.submitAssignment(userId, moduleId, assignmentId, request);
         return ResponseEntity.status(201).body(ApiResponse.success("LEARNING-201", "과제가 제출되었습니다.", data));
     }
 
     @GetMapping("/progress/me")
-    public ApiResponse<Object> getMyProgress() {
-        Map<String, Object> data = learningService.getMyProgress();
+    public ApiResponse<Object> getMyProgress(Authentication authentication) {
+        String userId = authentication != null ? authentication.getName() : "3021";
+        Map<String, Object> data = learningService.getMyProgress(userId);
         return ApiResponse.success("PROGRESS-200", "학습 진도 조회 성공", data);
     }
 }

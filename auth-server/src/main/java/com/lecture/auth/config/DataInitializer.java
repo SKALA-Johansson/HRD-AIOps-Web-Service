@@ -20,20 +20,21 @@ public class DataInitializer implements CommandLineRunner {
     public void run(String... args) {
         if (userRepository.count() == 0) {
             // 테스트용 사원 (EMPLOYEE)
-            userRepository.save(User.builder()
-                    .email("hong@example.com")
-                    .password(passwordEncoder.encode("Password123!"))
-                    .name("홍길동")
+            User user = User.builder()
+                    .username("3021")
+                    .password(passwordEncoder.encode("021210"))
+                    .name("이지수")
                     .role(User.Role.EMPLOYEE)
-                    .build());
+                    .build();
+            userRepository.save(user);
 
-            // 테스트용 HR 담당자 (HR)
-            userRepository.save(User.builder()
-                    .email("hr@example.com")
-                    .password(passwordEncoder.encode("Password123!"))
-                    .name("관리자")
+            User hr = User.builder()
+                    .username("hr")
+                    .password(passwordEncoder.encode("1234"))
+                    .name("인사담당자")
                     .role(User.Role.HR)
-                    .build());
+                    .build();
+
 
             log.info("테스트 사용자 초기 데이터 생성 완료 (EMPLOYEE, HR)");
         }

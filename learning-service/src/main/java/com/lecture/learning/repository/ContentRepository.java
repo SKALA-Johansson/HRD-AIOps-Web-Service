@@ -7,6 +7,6 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 @Repository
-public interface ContentRepository extends JpaRepository<Content, Long> {
-    List<Content> findByModuleId(Long moduleId);
+public interface ContentRepository extends JpaRepository<Content, String> {
+    List<Content> findByModuleId(String moduleId);
 }

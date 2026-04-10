@@ -2,19 +2,54 @@ package com.lecture.content.service;
 
 import com.lecture.content.domain.ContentType;
 import com.lecture.content.domain.EduContent;
+import com.lecture.content.dto.ContentEvent;
 import com.lecture.content.dto.ContentRequest;
 import com.lecture.content.repository.EduContentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class ContentService {
 
     private final EduContentRepository eduContentRepository;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+
+    private static final String TOPIC_CONTENT_EVENTS = "content-events";
+
+    @Transactional
+    public void uploadAndIngest(MultipartFile file, String title, String category) {
+        // 1. 파일 정보 저장 (S3 URL 등은 더미로 처리)
+        String dummyUrl = "http://dummy-storage.local/contents/" + file.getOriginalFilename();
+        
+        EduContent content = EduContent.builder()
+                .title(title)
+                .category(category)
+                .type(ContentType.PDF)
+                .fileUrl(dummyUrl)
+                .build();
+        
+        EduContent savedContent = eduContentRepository.save(content);
+
+        // 2. Kafka Event 발행: Content.Updated (Agent가 임베딩하도록)
+        ContentEvent event = ContentEvent.builder()
+                .eventType("Content.Updated")
+                .contentId(String.valueOf(savedContent.getId()))
+                .title(savedContent.getTitle())
+                .fileUrl(savedContent.getFileUrl())
+                .category(savedContent.getCategory())
+                .build();
+
+        log.info("Publishing content update event: {}", event);
+        kafkaTemplate.send(TOPIC_CONTENT_EVENTS, event);
+    }
 
     @Transactional
     public void registerContent(ContentRequest request) {
@@ -25,7 +60,17 @@ public class ContentService {
                 .fileUrl(request.getFileUrl())
                 .tags(request.getTags())
                 .build();
-        eduContentRepository.save(content);
+        EduContent savedContent = eduContentRepository.save(content);
+
+        ContentEvent event = ContentEvent.builder()
+                .eventType("Content.Updated")
+                .contentId(String.valueOf(savedContent.getId()))
+                .title(savedContent.getTitle())
+                .fileUrl(savedContent.getFileUrl())
+                .category(savedContent.getCategory())
+                .build();
+
+        kafkaTemplate.send(TOPIC_CONTENT_EVENTS, event);
     }
 
     @Transactional(readOnly = true)
@@ -40,16 +85,6 @@ public class ContentService {
             contents = eduContentRepository.findByType(type);
         } else {
             contents = eduContentRepository.findAll();
-        }
-
-        if (contents.isEmpty()) {
-            return List.of(ContentRequest.builder()
-                    .title("Sample Backend PDF")
-                    .type(ContentType.PDF)
-                    .category("BACKEND")
-                    .fileUrl("http://example.com/file.pdf")
-                    .tags(List.of("java", "spring"))
-                    .build());
         }
 
         return contents.stream()
