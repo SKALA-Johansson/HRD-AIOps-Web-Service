@@ -458,10 +458,11 @@ Authorization: Bearer {accessToken}
 
 ### Request
 
+`curriculumId`는 사용하지 않습니다. (대화 전용 — 사용자·질문만 전달.)
+
 ```
 {
   "userId":1,
-  "curriculumId":301,
   "question":"우리 팀 코딩 컨벤션은 뭐예요?"
 }
 ```
