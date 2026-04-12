@@ -19,14 +19,22 @@ public class LearningController {
     private final LearningService learningService;
 
     @GetMapping("/curriculums/me")
-    public ApiResponse<Object> getMyCurriculums() {
-        List<Map<String, Object>> data = learningService.getMyCurriculums();
+    public ApiResponse<Object> getMyCurriculums(
+            Authentication authentication,
+            @RequestHeader(value = "X-Employee-Id", required = false) String employeeId
+    ) {
+        String userId = resolveUserId(authentication, employeeId);
+        List<Map<String, Object>> data = learningService.getMyCurriculums(userId);
         return ApiResponse.success("내 커리큘럼 목록 조회 성공", data);
     }
 
     @GetMapping("/modules/{moduleId}/contents")
-    public ApiResponse<Object> getModuleContents(Authentication authentication, @PathVariable String moduleId) {
-        String userId = authentication != null ? authentication.getName() : "3021"; // 테스트를 위해 기본값 지정
+    public ApiResponse<Object> getModuleContents(
+            Authentication authentication,
+            @RequestHeader(value = "X-Employee-Id", required = false) String employeeId,
+            @PathVariable String moduleId
+    ) {
+        String userId = resolveUserId(authentication, employeeId);
         List<Map<String, Object>> data = learningService.getModuleContents(userId, moduleId);
         return ApiResponse.success("학습 콘텐츠 조회 성공", data);
     }
@@ -34,18 +42,32 @@ public class LearningController {
     @PostMapping("/assignments/{assignmentId}/submissions")
     public ResponseEntity<ApiResponse<Object>> submitAssignment(
             Authentication authentication,
+            @RequestHeader(value = "X-Employee-Id", required = false) String employeeId,
             @PathVariable String assignmentId,
             @RequestParam(value = "moduleId", required = false) String moduleId,
             @RequestBody SubmissionRequest request) {
-        String userId = authentication != null ? authentication.getName() : "3021";
+        String userId = resolveUserId(authentication, employeeId);
         Map<String, Object> data = learningService.submitAssignment(userId, moduleId, assignmentId, request);
         return ResponseEntity.status(201).body(ApiResponse.success("LEARNING-201", "과제가 제출되었습니다.", data));
     }
 
     @GetMapping("/progress/me")
-    public ApiResponse<Object> getMyProgress(Authentication authentication) {
-        String userId = authentication != null ? authentication.getName() : "3021";
+    public ApiResponse<Object> getMyProgress(
+            Authentication authentication,
+            @RequestHeader(value = "X-Employee-Id", required = false) String employeeId
+    ) {
+        String userId = resolveUserId(authentication, employeeId);
         Map<String, Object> data = learningService.getMyProgress(userId);
         return ApiResponse.success("PROGRESS-200", "학습 진도 조회 성공", data);
+    }
+
+    private String resolveUserId(Authentication authentication, String employeeId) {
+        if (employeeId != null && !employeeId.isBlank()) {
+            return employeeId;
+        }
+        if (authentication != null && authentication.getName() != null && !authentication.getName().isBlank()) {
+            return authentication.getName();
+        }
+        return "3021";
     }
 }

@@ -72,18 +72,22 @@ class AITutorAgent:
         user_message: str,
         conversation_history: list[dict],
         module_title: str | None = None,
-    ) -> str:
+        rag_context: list[str] | None = None,
+    ) -> tuple[str, list[str]]:
         """
         RAG 기반 실시간 AI 튜터링
+        Returns: (answer, rag_sources) — rag_sources는 참고 자료 텍스트 목록
         """
-        # RAG: 관련 교육 자료 검색
-        rag_query = f"{module_title or ''} {user_message}"
-        try:
-            rag_context = await search_relevant_content(rag_query, k=3)
-            rag_text = "\n\n".join(rag_context) if rag_context else ""
-        except Exception as e:
-            logger.warning(f"[RAG] 검색 실패: {e}")
-            rag_text = ""
+        # RAG: 외부에서 전달되지 않은 경우에만 검색
+        if rag_context is None:
+            rag_query = f"{module_title or ''} {user_message}"
+            try:
+                rag_context = await search_relevant_content(rag_query, k=3)
+            except Exception as e:
+                logger.warning(f"[RAG] 검색 실패: {e}")
+                rag_context = []
+
+        rag_text = "\n\n".join(rag_context) if rag_context else ""
 
         system_content = TUTOR_SYSTEM_PROMPT
         if module_title:
@@ -103,7 +107,7 @@ class AITutorAgent:
         messages.append(HumanMessage(content=user_message))
 
         response = await self.llm.ainvoke(messages)
-        return response.content
+        return response.content, rag_context
 
     async def grade_quiz(
         self,

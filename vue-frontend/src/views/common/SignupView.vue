@@ -6,14 +6,13 @@
     <div class="auth-card fade-in-up">
       <router-link to="/" class="back-link">← 홈</router-link>
       <h1 class="title">회원가입</h1>
-      <p class="desc">역할을 선택하고 가입합니다. (API: POST <code>/auth/signup</code>)</p>
 
       <form class="form" @submit.prevent="submit">
         <label class="form-label">이름</label>
         <input v-model="form.name" type="text" class="form-input" required />
 
-        <label class="form-label">이메일</label>
-        <input v-model="form.email" type="email" class="form-input" required autocomplete="username" />
+        <label class="form-label">사원번호 / 아이디</label>
+        <input v-model="form.username" type="text" class="form-input" required autocomplete="username" />
 
         <label class="form-label">비밀번호</label>
         <input
@@ -54,7 +53,7 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const form = reactive({
   name: '',
-  email: '',
+  username: '',
   password: '',
   role: 'HR'
 })
@@ -76,14 +75,14 @@ async function submit() {
   try {
     const res = await auth.signup({
       name: form.name,
-      email: form.email,
+      username: form.username,
       password: form.password,
       role: form.role
     })
     success.value = res.data?.message || '가입이 완료되었습니다. 로그인해 주세요.'
     setTimeout(() => router.push('/login'), 800)
   } catch (e) {
-    error.value = e.response?.data?.message || e.message || '회원가입에 실패했습니다.'
+    error.value = '회원가입에 실패했습니다. 잠시 후 다시 시도해 주세요.'
   } finally {
     loading.value = false
   }

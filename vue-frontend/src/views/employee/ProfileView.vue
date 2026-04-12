@@ -3,7 +3,6 @@
     <AppHeader />
     <main class="main">
       <h1 class="page-title">내 프로필</h1>
-      <p class="page-desc">GET/PUT <code>/profiles/me</code> — 희망 계열사·직무, 이력, 사전 역량 점수</p>
 
       <div v-if="loading" class="muted">불러오는 중…</div>
       <form v-else class="card form-card" @submit.prevent="save">
@@ -84,7 +83,7 @@ async function load() {
       }
     }
   } catch (e) {
-    error.value = e.response?.data?.message || e.message || '조회 실패'
+    error.value = '프로필 정보를 불러오지 못했습니다.'
   } finally {
     loading.value = false
   }
@@ -98,7 +97,7 @@ async function save() {
     await profilesApi.updateMe({ ...form })
     message.value = '저장되었습니다.'
   } catch (e) {
-    error.value = e.response?.data?.message || e.message || '저장 실패'
+    error.value = '프로필 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.'
   } finally {
     saving.value = false
   }

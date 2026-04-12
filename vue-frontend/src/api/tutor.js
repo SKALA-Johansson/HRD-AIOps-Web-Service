@@ -2,7 +2,7 @@ import api from '@/api/client.js'
 
 export const tutorApi = {
   ask(body) {
-    return api.post('/tutor/sessions', body)
+    return api.post('/tutor/sessions', body, { timeout: 120000 })
   },
   requestGrading(submissionId) {
     return api.post(`/tutor/assignments/${submissionId}/grade`)

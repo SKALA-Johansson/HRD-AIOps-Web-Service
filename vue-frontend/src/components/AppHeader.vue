@@ -1,9 +1,5 @@
 <template>
   <header class="app-header">
-    <div v-if="auth.isDevPreview" class="dev-banner">
-      <span>개발 미리보기 — API는 연결되지 않을 수 있습니다.</span>
-      <button type="button" class="banner-btn" @click="exitPreview">미리보기 종료</button>
-    </div>
     <div class="header-inner">
       <router-link :to="homeLink" class="logo">
         <img src="@/assets/images/logo/main_logo.png" alt="" class="logo-img" />
@@ -54,7 +50,6 @@ const roleLabel = computed(() => {
   return m[auth.role] || auth.role || ''
 })
 
-/** 로그인 후 로고 클릭 시 역할별 홈 */
 const homeLink = computed(() => {
   if (!auth.isAuthenticated) return '/'
   if (auth.role === 'HR') return '/hr/dashboard'
@@ -66,42 +61,9 @@ function onLogout() {
   auth.logout(false)
   router.push('/')
 }
-
-function exitPreview() {
-  auth.endDevPreview()
-  router.push('/')
-}
 </script>
 
 <style scoped>
-.dev-banner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 6px 16px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--color-warning-light);
-  color: var(--color-warning);
-  border-bottom: 1px solid var(--color-border);
-}
-.banner-btn {
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 600;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  cursor: pointer;
-  transition: var(--transition);
-}
-.banner-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
 .app-header {
   position: sticky;
   top: 0;

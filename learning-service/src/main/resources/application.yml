@@ -1,14 +1,14 @@
 server:
-  port: 10023
+  port: 9004
 
 spring:
   application:
-    name: learning-platform-service
+    name: LEARNING-SERVICE
   datasource:
-    url: jdbc:mariadb://localhost:3306/learning_platform_db?createDatabaseIfNotExist=true
+    url: jdbc:mariadb://${DB_HOST:mariadb}:${DB_PORT:3306}/${DB_NAME:learning_platform_db}?createDatabaseIfNotExist=true
     driver-class-name: org.mariadb.jdbc.Driver
-    username: root
-    password: password123
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:rootpassword}
   jpa:
     hibernate:
       ddl-auto: update
@@ -18,7 +18,7 @@ spring:
         dialect: org.hibernate.dialect.MariaDBDialect
 
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -28,9 +28,14 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: java.util.HashMap
         spring.json.trusted.packages: "*"
 
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://eureka:8761/eureka/}
+
+external:
+  curriculum-designer-url: http://curriculum-designer-agent:10022

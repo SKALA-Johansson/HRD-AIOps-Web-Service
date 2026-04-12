@@ -26,7 +26,6 @@
             </h1>
             <p class="hero-desc">
               배정된 교육은 주차 단위로 정리됩니다. 항목을 누르면 학습 콘텐츠 또는 커리큘럼 상세로 이동합니다.
-              (데이터: GET <code>/learning/curriculums/me</code> 및 모듈의 <code>week</code> 필드)
             </p>
           </div>
           <div class="hero-art">
@@ -36,9 +35,7 @@
                 <div class="hero-progress-card">
                   <div class="hero-progress-label">전체 진행률</div>
                   <div class="hero-progress-value">
-                    {{ progressLoading ? '—' : progress.completionRate ?? '—' }}<span style="font-size: 12px"
-                      >%</span
-                    >
+                    {{ progressLoading ? '—' : progress.completionRate ?? '—' }}<span style="font-size: 12px">%</span>
                   </div>
                 </div>
                 <div class="hero-progress-card">
@@ -49,8 +46,7 @@
                   </div>
                 </div>
               </div>
-              <div v-if="progressUsedMock" class="hero-progress-note">개발 미리보기: 더미 진도 수치입니다.</div>
-              <div v-else-if="progressError" class="hero-progress-note">진도를 불러오지 못했습니다.</div>
+              <div v-if="progressError" class="hero-progress-note">진도를 불러오지 못했습니다.</div>
             </div>
           </div>
         </div>
@@ -97,8 +93,7 @@
                     <div class="hover-tip" aria-hidden="true">
                       <div>상태: <strong>{{ statusLabel(it.status) }}</strong></div>
                       <div v-if="it.moduleId != null">
-                        과제 제출:
-                        <strong>{{ hasSubmittedForModule(it.moduleId) ? '제출됨' : '미제출' }}</strong>
+                        과제 제출: <strong>{{ hasSubmittedForModule(it.moduleId) ? '제출됨' : '미제출' }}</strong>
                       </div>
                       <div v-else>과제 제출: <strong>해당 없음</strong></div>
                     </div>
@@ -132,17 +127,13 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import { learningApi } from '@/api/learning.js'
-import { useAuthStore } from '@/store/auth.js'
-import { MOCK_PROGRESS, sampleCoursesForUser, sampleWeeklyRoadmap } from '@/data/devMock.js'
 
-const auth = useAuthStore()
 const loading = ref(true)
 const error = ref('')
 const rawItems = ref([])
 const query = ref('')
 
 const progressLoading = ref(true)
-const progressUsedMock = ref(false)
 const progressError = ref('')
 const progress = reactive({
   completionRate: null,
@@ -162,8 +153,7 @@ function readSubmissions() {
 
 function hasSubmittedForModule(moduleId) {
   if (moduleId == null) return false
-  const all = readSubmissions()
-  return !!all[String(moduleId)]
+  return !!readSubmissions()[String(moduleId)]
 }
 
 function weekStats(block) {
@@ -183,23 +173,22 @@ function hasModulesInList(list) {
 
 function normalizeStatus(s) {
   const x = String(s || '').toLowerCase()
-  if (/완료|done|complete|approved|수료/i.test(x)) return 'done'
+  if (/완료|done|complete|completed|수료/i.test(x)) return 'done'
   if (/진행|progress|ing|진행 중/i.test(x)) return 'in_progress'
-  if (/draft|임시/i.test(x)) return 'upcoming'
   return 'upcoming'
 }
 
 function itemHref(curriculumId, moduleId) {
-  if (moduleId != null && moduleId !== '') {
-    return `/learning/modules/${moduleId}`
-  }
-  if (curriculumId != null) {
-    return `/curriculums/${curriculumId}`
-  }
+  if (moduleId != null && moduleId !== '') return `/learning/modules/${moduleId}`
+  if (curriculumId != null) return `/curriculums/${curriculumId}`
   return null
 }
 
-/** API가 modules를 내려줄 때: 주차별 병합 */
+function focusHeadline(items) {
+  const t = items.map((i) => i.detail).find(Boolean)
+  return t ? `핵심 과정: ${t}` : ''
+}
+
 function buildFromCurriculaWithModules(list) {
   const map = new Map()
   for (const c of list) {
@@ -207,9 +196,7 @@ function buildFromCurriculaWithModules(list) {
     const ctitle = c.title || `커리큘럼 ${cid}`
     for (const m of c.modules || []) {
       const w = Number(m.week) || 1
-      if (!map.has(w)) {
-        map.set(w, { week: w, headline: '', items: [] })
-      }
+      if (!map.has(w)) map.set(w, { week: w, headline: '', items: [] })
       map.get(w).items.push({
         title: m.title || '모듈',
         detail: ctitle,
@@ -223,18 +210,9 @@ function buildFromCurriculaWithModules(list) {
   }
   return [...map.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([, block]) => ({
-      ...block,
-      headline: block.headline || focusHeadline(block.items)
-    }))
+    .map(([, block]) => ({ ...block, headline: block.headline || focusHeadline(block.items) }))
 }
 
-function focusHeadline(items) {
-  const t = items.map((i) => i.detail).find(Boolean)
-  return t ? `핵심 과정: ${t}` : ''
-}
-
-/** modules 없음: 커리큘럼마다 1주차처럼 쌓기 */
 function buildFromCurriculaFlatWeeks(list) {
   return list.map((c, i) => {
     const cid = c.curriculumId ?? c.id
@@ -260,20 +238,7 @@ function buildFromCurriculaFlatWeeks(list) {
 const roadmap = computed(() => {
   const list = rawItems.value
   if (!list.length) return []
-  if (hasModulesInList(list)) {
-    return buildFromCurriculaWithModules(list)
-  }
-  if (auth.isDevPreview) {
-    return sampleWeeklyRoadmap(auth.user?.name).map((block) => ({
-      ...block,
-      items: block.items.map((it) => ({
-        ...it,
-        status: it.status || 'upcoming',
-        href: itemHref(it.curriculumId, it.moduleId),
-        key: `${it.curriculumId}-${it.moduleId ?? it.title}`
-      }))
-    }))
-  }
+  if (hasModulesInList(list)) return buildFromCurriculaWithModules(list)
   return buildFromCurriculaFlatWeeks(list)
 })
 
@@ -293,15 +258,11 @@ const filteredRoadmap = computed(() => {
     .filter((block) => block.items.length > 0)
 })
 
-const emptyMessage = computed(() => {
-  if (!rawItems.value.length && !auth.isDevPreview) {
-    return '아직 배정된 커리큘럼이 없습니다. 목표·커리큘럼 메뉴에서 생성 요청을 진행해 주세요.'
-  }
-  if (query.value.trim()) {
-    return '검색과 일치하는 주차·과정이 없습니다.'
-  }
-  return '표시할 교육 일정이 없습니다.'
-})
+const emptyMessage = computed(() =>
+  query.value.trim()
+    ? '검색과 일치하는 주차·과정이 없습니다.'
+    : '아직 배정된 커리큘럼이 없습니다.'
+)
 
 function statusLabel(s) {
   const m = { done: '완료', in_progress: '진행 중', upcoming: '예정' }
@@ -312,22 +273,14 @@ onMounted(async () => {
   loading.value = true
   error.value = ''
   progressLoading.value = true
-  progressUsedMock.value = false
   progressError.value = ''
+
   try {
     const res = await learningApi.myCurriculums()
     const d = res.data?.data
-    let list = Array.isArray(d) ? d : d ? [d] : []
-    if (!list.length && auth.isDevPreview) {
-      list = sampleCoursesForUser(auth.user?.name)
-    }
-    rawItems.value = list
+    rawItems.value = Array.isArray(d) ? d : d ? [d] : []
   } catch (e) {
-    error.value = e.response?.data?.message || e.message || '목록을 불러오지 못했습니다.'
-    if (auth.isDevPreview) {
-      rawItems.value = sampleCoursesForUser(auth.user?.name)
-      error.value = ''
-    }
+    error.value = '커리큘럼 목록을 불러오지 못했습니다.'
   } finally {
     loading.value = false
   }
@@ -339,17 +292,9 @@ onMounted(async () => {
       progress.completionRate = d.completionRate
       progress.completedModules = d.completedModules
       progress.totalModules = d.totalModules
-    } else if (auth.isDevPreview) {
-      Object.assign(progress, MOCK_PROGRESS)
-      progressUsedMock.value = true
     }
   } catch (e) {
-    progressError.value = e.response?.data?.message || e.message || '진도를 불러오지 못했습니다.'
-    if (auth.isDevPreview) {
-      Object.assign(progress, MOCK_PROGRESS)
-      progressUsedMock.value = true
-      progressError.value = ''
-    }
+    progressError.value = '학습 진도를 불러오지 못했습니다.'
   } finally {
     progressLoading.value = false
   }
@@ -361,7 +306,6 @@ onMounted(async () => {
   min-height: 100vh;
   background: var(--color-bg-secondary);
 }
-
 .search-strip {
   background: var(--color-bg-primary);
   border-bottom: 1px solid var(--color-border);
@@ -394,13 +338,11 @@ onMounted(async () => {
 .search-input::placeholder {
   color: var(--color-text-muted);
 }
-
 .main {
   max-width: 800px;
   margin: 0 auto;
   padding: 24px 24px 72px;
 }
-
 .hero {
   margin-bottom: 40px;
 }
@@ -412,24 +354,14 @@ onMounted(async () => {
   min-height: 200px;
   padding: 28px 32px;
   border-radius: var(--radius-xl);
-  background: linear-gradient(
-    120deg,
-    var(--sk-navy-deep) 0%,
-    var(--sk-red) 42%,
-    var(--sk-navy) 100%
-  );
+  background: linear-gradient(120deg, var(--sk-navy-deep) 0%, var(--sk-red) 42%, var(--sk-navy) 100%);
   color: var(--color-hero-text);
   overflow: hidden;
   box-shadow: var(--shadow-lg);
 }
 @media (max-width: 768px) {
-  .hero-slide {
-    grid-template-columns: 1fr;
-    min-height: auto;
-  }
-  .hero-art {
-    min-height: 100px;
-  }
+  .hero-slide { grid-template-columns: 1fr; min-height: auto; }
+  .hero-art { min-height: 100px; }
 }
 .hero-kicker {
   font-size: 12px;
@@ -448,29 +380,52 @@ onMounted(async () => {
   font-size: 14px;
   opacity: 0.88;
   line-height: 1.55;
-  max-width: 100%;
-}
-.hero-desc code {
-  font-size: 11px;
-  background: rgba(255, 255, 255, 0.12);
-  padding: 2px 6px;
-  border-radius: 4px;
 }
 .hero-art {
   border-radius: var(--radius-lg);
   background:
-    radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.14) 0%, transparent 50%),
-    radial-gradient(circle at 70% 60%, rgba(0, 114, 198, 0.38) 0%, transparent 48%);
+    radial-gradient(circle at 30% 40%, rgba(255,255,255,0.14) 0%, transparent 50%),
+    radial-gradient(circle at 70% 60%, rgba(0,114,198,0.38) 0%, transparent 48%);
   min-height: 140px;
   display: flex;
   align-items: stretch;
 }
-[data-theme='dark'] .hero-art {
-  background:
-    radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 70% 60%, rgba(77, 163, 230, 0.35) 0%, transparent 48%);
+.hero-progress {
+  width: 100%;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
 }
-
+.hero-progress-title {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+.hero-progress-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.hero-progress-card {
+  border: 1px solid rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.10);
+  border-radius: 14px;
+  padding: 12px;
+}
+.hero-progress-label {
+  font-size: 12px;
+  opacity: 0.85;
+}
+.hero-progress-value {
+  font-size: 18px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+.hero-progress-note {
+  font-size: 12px;
+  opacity: 0.82;
+  line-height: 1.4;
+}
 .section-title {
   font-size: 1.15rem;
   font-weight: 800;
@@ -479,20 +434,13 @@ onMounted(async () => {
   padding-bottom: 12px;
   border-bottom: 2px solid var(--color-primary);
 }
-
-.roadmap {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
+.roadmap { list-style: none; margin: 0; padding: 0; }
 .week-block {
   display: grid;
   grid-template-columns: 48px 1fr;
   gap: 0 16px;
   margin-bottom: 8px;
 }
-
 .week-rail {
   display: flex;
   flex-direction: column;
@@ -519,23 +467,11 @@ onMounted(async () => {
   min-height: 24px;
   margin-top: 8px;
   margin-bottom: -8px;
-  background: linear-gradient(
-    180deg,
-    var(--color-primary-light) 0%,
-    var(--color-border) 100%
-  );
+  background: linear-gradient(180deg, var(--color-primary-light) 0%, var(--color-border) 100%);
   border-radius: 2px;
 }
-.week-block:last-child .week-line {
-  display: none;
-}
-
-.week-body {
-  padding-bottom: 28px;
-}
-.week-header {
-  margin-bottom: 12px;
-}
+.week-block:last-child .week-line { display: none; }
+.week-body { padding-bottom: 28px; }
 .week-label {
   font-size: 11px;
   font-weight: 700;
@@ -550,7 +486,6 @@ onMounted(async () => {
   color: var(--color-text-primary);
   line-height: 1.35;
 }
-
 .item-list {
   list-style: none;
   margin: 0;
@@ -559,7 +494,6 @@ onMounted(async () => {
   flex-direction: column;
   gap: 10px;
 }
-
 .item-card {
   display: flex;
   align-items: flex-start;
@@ -576,40 +510,14 @@ onMounted(async () => {
   border-left-color: var(--color-border);
   position: relative;
 }
-.item-card.is-link {
-  cursor: pointer;
-}
-.item-card.is-link:hover {
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
-}
-.item-card.status-done {
-  border-left-color: var(--color-success);
-}
-.item-card.status-in_progress {
-  border-left-color: var(--color-primary);
-}
-.item-card.status-upcoming {
-  border-left-color: var(--color-border-hover);
-}
-
-.item-main {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.item-title {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-.item-detail {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  line-height: 1.45;
-}
-
+.item-card.is-link { cursor: pointer; }
+.item-card.is-link:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
+.item-card.status-done { border-left-color: var(--color-success); }
+.item-card.status-in_progress { border-left-color: var(--color-primary); }
+.item-card.status-upcoming { border-left-color: var(--color-border-hover); }
+.item-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.item-title { font-size: 15px; font-weight: 600; line-height: 1.4; }
+.item-detail { font-size: 13px; color: var(--color-text-muted); line-height: 1.45; }
 .status-pill {
   flex-shrink: 0;
   font-size: 11px;
@@ -619,77 +527,14 @@ onMounted(async () => {
   background: var(--color-bg-tertiary);
   color: var(--color-text-secondary);
 }
-.status-pill[data-status='done'] {
-  background: var(--color-success-light);
-  color: var(--color-success);
-}
-.status-pill[data-status='in_progress'] {
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-}
-
-.state {
-  padding: 24px 0;
-}
-.empty {
-  padding: 32px 0;
-  font-size: 14px;
-  line-height: 1.55;
-}
-.muted {
-  color: var(--color-text-muted);
-}
-.error {
-  color: var(--color-danger);
-}
-
-.hero-progress {
-  width: 100%;
-  padding: 16px;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-.hero-progress-title {
-  font-size: 12px;
-  font-weight: 700;
-  opacity: 0.9;
-}
-.hero-progress-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.hero-progress-card {
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.10);
-  border-radius: 14px;
-  padding: 12px 12px;
-}
-.hero-progress-label {
-  font-size: 12px;
-  opacity: 0.85;
-}
-.hero-progress-value {
-  font-size: 18px;
-  font-weight: 800;
-  margin-top: 4px;
-}
-.hero-progress-note {
-  font-size: 12px;
-  opacity: 0.82;
-  line-height: 1.4;
-}
-
-.week-hover {
-  display: none;
-  margin-top: 8px;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.week-block:hover .week-hover {
-  display: flex;
-}
+.status-pill[data-status='done'] { background: var(--color-success-light); color: var(--color-success); }
+.status-pill[data-status='in_progress'] { background: var(--color-primary-light); color: var(--color-primary); }
+.state { padding: 24px 0; }
+.empty { padding: 32px 0; font-size: 14px; line-height: 1.55; }
+.muted { color: var(--color-text-muted); }
+.error { color: var(--color-danger); }
+.week-hover { display: none; margin-top: 8px; gap: 8px; flex-wrap: wrap; }
+.week-block:hover .week-hover { display: flex; }
 .mini-pill {
   display: inline-flex;
   align-items: center;
@@ -701,12 +546,7 @@ onMounted(async () => {
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
 }
-.mini-pill.strong {
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  border-color: var(--color-primary-light);
-}
-
+.mini-pill.strong { background: var(--color-primary-light); color: var(--color-primary); border-color: var(--color-primary-light); }
 .hover-tip {
   position: absolute;
   left: 12px;
@@ -722,7 +562,5 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--color-text-secondary);
 }
-.item-card:hover .hover-tip {
-  display: block;
-}
+.item-card:hover .hover-tip { display: block; }
 </style>

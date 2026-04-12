@@ -9,14 +9,20 @@ import com.lecture.learning.repository.ProgressRepository;
 import com.lecture.learning.repository.SubmissionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -27,14 +33,94 @@ public class LearningService {
     private final SubmissionRepository submissionRepository;
     private final ProgressRepository progressRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final RestTemplate restTemplate = new RestTemplate();
 
     private static final String TOPIC_LEARNING_LOGS = "learning-logs";
 
+    @Value("${external.curriculum-designer-url:http://curriculum-designer-agent:10022}")
+    private String curriculumDesignerUrl;
+
     @Transactional(readOnly = true)
-    public List<Map<String, Object>> getMyCurriculums() {
-        return List.of(
-                Map.of("curriculumId", "cur-ai-001", "title", "AI/Data 직무 맞춤형 온보딩 커리큘럼")
-        );
+    public List<Map<String, Object>> getMyCurriculums(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            String endpoint = curriculumDesignerUrl + "/curriculums/employee/" + userId;
+            ResponseEntity<Map> response = restTemplate.getForEntity(endpoint, Map.class);
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                log.warn("Failed to fetch curriculums from curriculum-designer-agent. status={}", response.getStatusCode());
+                return fallbackCurriculums();
+            }
+
+            Object dataObj = response.getBody().get("data");
+            if (!(dataObj instanceof List<?> rows)) {
+                return List.of();
+            }
+
+            Set<String> visibleStatuses = Set.of("APPROVED", "ACTIVE", "COMPLETED");
+            List<Map<String, Object>> result = new ArrayList<>();
+
+            for (Object row : rows) {
+                if (!(row instanceof Map<?, ?> c)) {
+                    continue;
+                }
+
+                String status = c.get("status") == null ? "" : String.valueOf(c.get("status")).toUpperCase();
+                if (!visibleStatuses.contains(status)) {
+                    continue;
+                }
+
+                Object curriculumId = c.get("curriculumId");
+                if (curriculumId == null) {
+                    curriculumId = c.get("id");
+                }
+                if (curriculumId == null) {
+                    continue;
+                }
+
+                String title = c.get("title") == null
+                        ? "맞춤형 온보딩 커리큘럼"
+                        : String.valueOf(c.get("title"));
+                List<Map<String, Object>> modules = new ArrayList<>();
+
+                Object modulesObj = c.get("modules");
+                if (modulesObj instanceof List<?> moduleRows) {
+                    for (Object moduleRow : moduleRows) {
+                        if (!(moduleRow instanceof Map<?, ?> m)) {
+                            continue;
+                        }
+                        String moduleId = m.get("moduleId") == null ? null : String.valueOf(m.get("moduleId"));
+                        String moduleStatus = "NOT_STARTED";
+                        if (moduleId != null) {
+                            moduleStatus = progressRepository.findByUserIdAndModuleId(userId, moduleId)
+                                    .map(Progress::getStatus)
+                                    .orElse("NOT_STARTED");
+                        }
+                        Map<String, Object> module = new HashMap<>();
+                        module.put("moduleId", moduleId);
+                        module.put("week", m.get("week") == null ? 1 : m.get("week"));
+                        module.put("title", m.get("title") == null ? "모듈" : String.valueOf(m.get("title")));
+                        module.put("status", moduleStatus);
+                        modules.add(module);
+                    }
+                    modules.sort(Comparator.comparingInt(m -> toInt(m.get("week"), 1)));
+                }
+
+                Map<String, Object> item = new HashMap<>();
+                item.put("curriculumId", curriculumId);
+                item.put("title", title);
+                item.put("status", status);
+                item.put("modules", modules);
+                result.add(item);
+            }
+
+            return result;
+        } catch (Exception e) {
+            log.warn("Failed to fetch employee curriculums for userId={}: {}", userId, e.getMessage());
+            return fallbackCurriculums();
+        }
     }
 
     @Transactional
@@ -65,6 +151,24 @@ public class LearningService {
 
         Submission savedSubmission = submissionRepository.save(submission);
 
+        // 과제 제출 시 해당 모듈 Progress를 COMPLETED로 업데이트
+        progressRepository.findByUserIdAndModuleId(userId, moduleId).ifPresentOrElse(
+                progress -> {
+                    progress.setStatus("COMPLETED");
+                    progress.setCompletionRate(100.0);
+                    progressRepository.save(progress);
+                },
+                () -> {
+                    Progress progress = Progress.builder()
+                            .userId(userId)
+                            .moduleId(moduleId)
+                            .status("COMPLETED")
+                            .completionRate(100.0)
+                            .build();
+                    progressRepository.save(progress);
+                }
+        );
+
         // 과제 제출 활동 로그 발행
         publishLearningLogEvent(userId, moduleId, "ASSIGNMENT_SUBMITTED", 100.0);
 
@@ -76,16 +180,35 @@ public class LearningService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> getMyProgress(String userId) {
-        List<Progress> progresses = progressRepository.findByUserId(userId).stream().toList();
-        
+        List<Progress> progresses = progressRepository.findAllByUserId(userId);
+
         if (progresses.isEmpty()) {
-            return Map.of("completionRate", 0, "totalModules", 0);
+            return Map.of("completionRate", 0, "completedModules", 0, "totalModules", 0);
         }
 
         double totalRate = progresses.stream().mapToDouble(p -> p.getCompletionRate() != null ? p.getCompletionRate() : 0.0).average().orElse(0.0);
+        long completedModules = progresses.stream()
+                .filter(p -> "COMPLETED".equalsIgnoreCase(p.getStatus()) || (p.getCompletionRate() != null && p.getCompletionRate() >= 100.0))
+                .count();
         return Map.of(
                 "completionRate", (int)totalRate,
+                "completedModules", (int) completedModules,
                 "totalModules", progresses.size()
+        );
+    }
+
+    private int toInt(Object value, int fallback) {
+        if (value == null) return fallback;
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    private List<Map<String, Object>> fallbackCurriculums() {
+        return List.of(
+                Map.of("curriculumId", 301, "title", "AI/Data 직무 맞춤형 온보딩 커리큘럼")
         );
     }
 

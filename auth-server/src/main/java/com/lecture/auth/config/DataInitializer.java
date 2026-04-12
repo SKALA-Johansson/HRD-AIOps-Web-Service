@@ -34,7 +34,7 @@ public class DataInitializer implements CommandLineRunner {
                     .name("인사담당자")
                     .role(User.Role.HR)
                     .build();
-
+            userRepository.save(hr);
 
             log.info("테스트 사용자 초기 데이터 생성 완료 (EMPLOYEE, HR)");
         }

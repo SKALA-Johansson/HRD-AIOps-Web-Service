@@ -31,7 +31,7 @@ class ReportControllerTest {
     @Test
     @DisplayName("개인 성장 리포트 조회 API 테스트")
     void getUserReportTest() throws Exception {
-        Long userId = 1L;
+        String userId = "user-001";
         GrowthReportDto dto = GrowthReportDto.builder()
                 .userId(userId)
                 .strengths(List.of("Python 문제 해결력"))
@@ -44,7 +44,7 @@ class ReportControllerTest {
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.userId").value(1))
+                .andExpect(jsonPath("$.data.userId").value("user-001"))
                 .andExpect(jsonPath("$.data.strengths").isArray())
                 .andExpect(jsonPath("$.data.weaknesses").isArray())
                 .andExpect(jsonPath("$.data.achievementMetrics").isMap());

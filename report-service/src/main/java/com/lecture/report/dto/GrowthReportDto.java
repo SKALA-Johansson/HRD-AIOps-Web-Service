@@ -11,7 +11,7 @@ import java.util.Map;
 @AllArgsConstructor
 @Builder
 public class GrowthReportDto {
-    private Long userId;
+    private String userId;
     private List<String> strengths;
     private List<String> weaknesses;
     private Map<String, Integer> achievementMetrics;

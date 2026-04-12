@@ -28,10 +28,12 @@ class Goal(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def get_skills(self) -> list:
-        return json.loads(self.skills) if self.skills else []
+        if not self.skills:
+            return []
+        return [s.strip() for s in self.skills.split(",") if s.strip()]
 
     def set_skills(self, skills: list):
-        self.skills = json.dumps(skills, ensure_ascii=False)
+        self.skills = ",".join(s.strip() for s in skills if s.strip())
 
     def get_goals(self) -> list:
         return json.loads(self.goals) if self.goals else []

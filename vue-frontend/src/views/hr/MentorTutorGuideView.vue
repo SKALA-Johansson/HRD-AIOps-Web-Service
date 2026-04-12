@@ -3,90 +3,68 @@
     <AppHeader />
     <main class="main">
       <h1 class="page-title">AI 튜터링 가이드</h1>
-      <p class="page-desc">
-        Growth Reporter 등에서 생성되는 면담 가이드(요구사항 Step 1). 백엔드 연동 전 더미입니다.
-      </p>
 
-      <div v-if="isDev" class="note">개발: API 대신 정적 더미입니다.</div>
+      <div class="query-row">
+        <input v-model="employeeId" class="form-input" placeholder="신입사원 ID (예: 1)" />
+        <button type="button" class="btn btn-primary btn-sm" :disabled="loading" @click="fetchGuide">
+          {{ loading ? '생성 중…' : '가이드 생성' }}
+        </button>
+      </div>
 
-      <section class="card">
-        <h2 class="sub">이번 주 포커스</h2>
-        <p class="body">{{ guide.weekFocus }}</p>
-      </section>
+      <p v-if="error" class="error">{{ error }}</p>
 
-      <section class="card">
-        <h2 class="sub">면담 시 짚을 포인트</h2>
-        <ul>
-          <li v-for="(t, i) in guide.talkingPoints" :key="i">{{ t }}</li>
-        </ul>
-      </section>
-
-      <section class="card">
-        <h2 class="sub">추천 질문</h2>
-        <ul>
-          <li v-for="(q, i) in guide.suggestedQuestions" :key="i">{{ q }}</li>
-        </ul>
-      </section>
+      <template v-if="guide">
+        <section class="card">
+          <h2 class="sub">AI 튜터 응답</h2>
+          <p class="body">{{ guide }}</p>
+        </section>
+      </template>
+      <p v-else-if="!loading && !error" class="muted">신입사원 ID를 입력하고 가이드 생성 버튼을 누르세요.</p>
     </main>
   </div>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
-import { MOCK_TUTOR_GUIDE } from '@/data/devMock.js'
+import { tutorApi } from '@/api/tutor.js'
 
-const isDev = import.meta.env.DEV
-const guide = MOCK_TUTOR_GUIDE
+const employeeId = ref('')
+const loading = ref(false)
+const error = ref('')
+const guide = ref('')
+
+async function fetchGuide() {
+  if (!employeeId.value.trim()) { error.value = '신입사원 ID를 입력하세요.'; return }
+  loading.value = true
+  error.value = ''
+  guide.value = ''
+  try {
+    const res = await tutorApi.ask({
+      userId: Number(employeeId.value.trim()) || 0,
+      curriculumId: '0',
+      question: '이 신입사원의 학습 현황을 분석하고 멘토링 가이드를 작성해주세요.'
+    })
+    const d = res.data?.data ?? res.data
+    guide.value = d?.answer ?? d?.response ?? JSON.stringify(d, null, 2)
+  } catch (e) {
+    error.value = 'AI 튜터링 가이드를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: var(--color-bg-secondary);
-}
-.main {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 28px 24px 64px;
-}
-.page-title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-.page-desc {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  margin-bottom: 16px;
-  line-height: 1.5;
-}
-.note {
-  font-size: 13px;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  background: var(--color-primary-light);
-  margin-bottom: 20px;
-}
-.card {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  margin-bottom: 16px;
-}
-.sub {
-  font-size: 16px;
-  margin-bottom: 12px;
-}
-.body {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
-}
-ul {
-  margin-left: 1.2rem;
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--color-text-secondary);
-}
+.page { min-height: 100vh; background: var(--color-bg-secondary); }
+.main { max-width: 720px; margin: 0 auto; padding: 28px 24px 64px; }
+.page-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; }
+.query-row { display: flex; gap: 12px; margin-bottom: 20px; }
+.form-input { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 14px; width: 200px; }
+.btn-sm { padding: 10px 18px; }
+.card { background: var(--color-bg-primary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 16px; }
+.sub { font-size: 16px; margin-bottom: 12px; }
+.body { font-size: 14px; line-height: 1.7; color: var(--color-text-secondary); white-space: pre-wrap; }
+.muted { color: var(--color-text-muted); font-size: 14px; }
+.error { color: var(--color-danger); margin-bottom: 12px; }
 </style>

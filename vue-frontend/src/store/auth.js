@@ -6,29 +6,12 @@ const STORAGE_ACCESS = 'shrd_access_token'
 const STORAGE_REFRESH = 'shrd_refresh_token'
 const STORAGE_USER = 'shrd_user'
 
-/** 개발 서버에서만 사용 — 운영 빌드에서는 무시됨 */
-export const DEV_PREVIEW_TOKEN = '__DEV_PREVIEW__'
-
-function readTokenSafe() {
-  const t = sessionStorage.getItem(STORAGE_ACCESS)
-  if (!import.meta.env.DEV && t === DEV_PREVIEW_TOKEN) {
-    sessionStorage.removeItem(STORAGE_ACCESS)
-    sessionStorage.removeItem(STORAGE_REFRESH)
-    sessionStorage.removeItem(STORAGE_USER)
-    return null
-  }
-  return t
-}
-
 export const useAuthStore = defineStore('auth', () => {
-  const accessToken = ref(readTokenSafe() || null)
+  const accessToken = ref(sessionStorage.getItem(STORAGE_ACCESS) || null)
   const refreshToken = ref(sessionStorage.getItem(STORAGE_REFRESH) || null)
   const user = ref(JSON.parse(sessionStorage.getItem(STORAGE_USER) || 'null'))
 
   const isAuthenticated = computed(() => !!accessToken.value)
-  const isDevPreview = computed(
-    () => import.meta.env.DEV && accessToken.value === DEV_PREVIEW_TOKEN
-  )
   const role = computed(() => user.value?.role ?? null)
   const isEmployee = computed(() => role.value === 'EMPLOYEE')
   const isHr = computed(() => role.value === 'HR')
@@ -42,35 +25,8 @@ export const useAuthStore = defineStore('auth', () => {
     else sessionStorage.removeItem(STORAGE_USER)
   }
 
-  /**
-   * DB·백엔드 없이 UI만 볼 때 (npm run dev 전용)
-   * @param {'EMPLOYEE' | 'HR'} previewRole
-   */
-  function startDevPreview(previewRole) {
-    if (!import.meta.env.DEV) return
-    const mockNames = {
-      EMPLOYEE: '개발 미리보기(신입)',
-      HR: '개발 미리보기(HR)'
-    }
-    accessToken.value = DEV_PREVIEW_TOKEN
-    refreshToken.value = null
-    user.value = {
-      userId: previewRole === 'EMPLOYEE' ? 1 : 900,
-      name: mockNames[previewRole] || '개발 미리보기',
-      role: previewRole
-    }
-    persist()
-  }
-
-  function endDevPreview() {
-    accessToken.value = null
-    refreshToken.value = null
-    user.value = null
-    persist()
-  }
-
-  async function login(email, password) {
-    const res = await authApi.login({ email, password })
+  async function login(username, password) {
+    const res = await authApi.login({ username, password })
     const payload = res.data?.data
     if (!payload?.accessToken) {
       throw new Error(res.data?.message || '로그인 응답이 올바르지 않습니다.')
@@ -107,15 +63,12 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     user,
     isAuthenticated,
-    isDevPreview,
     role,
     isEmployee,
     isHr,
     login,
     signup,
     logout,
-    startDevPreview,
-    endDevPreview,
     afterProfileRefresh,
     persist
   }

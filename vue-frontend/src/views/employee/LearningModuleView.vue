@@ -3,12 +3,7 @@
     <AppHeader />
     <main class="main">
       <h1 class="page-title">모듈 학습 콘텐츠</h1>
-      <p class="page-desc">
-        모듈 ID: <strong>{{ moduleId }}</strong> — GET
-        <code>/learning/modules/{moduleId}/contents</code>
-      </p>
 
-      <p v-if="usedMock" class="mock-hint">개발 미리보기: 콘텐츠는 더미입니다.</p>
       <div v-if="loading" class="muted">불러오는 중…</div>
       <p v-else-if="error" class="error">{{ error }}</p>
       <ul v-else class="content-list">
@@ -24,7 +19,6 @@
 
       <section class="card">
         <h2 class="sub-title">과제 제출</h2>
-        <p class="hint">POST <code>/learning/assignments/{assignmentId}/submissions</code></p>
         <label class="form-label">assignmentId</label>
         <input v-model="assignmentId" class="form-input" placeholder="예: 501" />
         <label class="form-label">답안 텍스트</label>
@@ -44,11 +38,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
 import { learningApi } from '@/api/learning.js'
-import { useAuthStore } from '@/store/auth.js'
-import { mockModuleContents, MOCK_ASSIGNMENT_ID } from '@/data/devMock.js'
 
 const route = useRoute()
-const auth = useAuthStore()
 const moduleId = computed(() => route.params.moduleId)
 
 const loading = ref(true)
@@ -60,46 +51,29 @@ const answerText = ref('')
 const submitting = ref(false)
 const submitMsg = ref('')
 const formError = ref('')
-const usedMock = ref(false)
 
 const SUBMISSION_STORAGE_KEY = 'shrd_submissions_v1'
 
-function readSubmissions() {
-  try {
-    return JSON.parse(sessionStorage.getItem(SUBMISSION_STORAGE_KEY) || '{}')
-  } catch {
-    return {}
-  }
-}
-
 function writeSubmission(moduleIdValue, assignmentIdValue) {
-  const all = readSubmissions()
-  all[String(moduleIdValue)] = {
-    assignmentId: String(assignmentIdValue),
-    submittedAt: new Date().toISOString()
-  }
-  sessionStorage.setItem(SUBMISSION_STORAGE_KEY, JSON.stringify(all))
+  try {
+    const all = JSON.parse(sessionStorage.getItem(SUBMISSION_STORAGE_KEY) || '{}')
+    all[String(moduleIdValue)] = {
+      assignmentId: String(assignmentIdValue),
+      submittedAt: new Date().toISOString()
+    }
+    sessionStorage.setItem(SUBMISSION_STORAGE_KEY, JSON.stringify(all))
+  } catch {}
 }
 
 async function load() {
   loading.value = true
   error.value = ''
-  usedMock.value = false
   try {
     const res = await learningApi.moduleContents(moduleId.value)
     const d = res.data?.data
     contents.value = Array.isArray(d) ? d : []
-    if (contents.value.length === 0 && auth.isDevPreview) {
-      contents.value = mockModuleContents(moduleId.value)
-      usedMock.value = true
-    }
   } catch (e) {
-    error.value = e.response?.data?.message || e.message || '조회 실패'
-    if (auth.isDevPreview) {
-      contents.value = mockModuleContents(moduleId.value)
-      usedMock.value = true
-      error.value = ''
-    }
+    error.value = '콘텐츠 목록을 불러오지 못했습니다.'
   } finally {
     loading.value = false
   }
@@ -107,7 +81,6 @@ async function load() {
 
 async function submit() {
   if (!assignmentId.value) {
-    submitMsg.value = ''
     formError.value = 'assignmentId를 입력하세요.'
     return
   }
@@ -122,50 +95,20 @@ async function submit() {
     submitMsg.value = '제출되었습니다.'
     writeSubmission(moduleId.value, assignmentId.value)
   } catch (e) {
-    formError.value = e.response?.data?.message || e.message || '제출 실패'
+    formError.value = '과제 제출에 실패했습니다. 잠시 후 다시 시도해 주세요.'
   } finally {
     submitting.value = false
   }
 }
 
-onMounted(() => {
-  if (auth.isDevPreview) {
-    assignmentId.value = MOCK_ASSIGNMENT_ID
-  }
-  load()
-})
+onMounted(load)
 </script>
 
 <style scoped>
-.page {
-  min-height: 100vh;
-  background: var(--color-bg-secondary);
-}
-.main {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 28px 24px 64px;
-}
-.page-title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-.page-desc {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  margin-bottom: 20px;
-}
-.page-desc code {
-  font-size: 12px;
-  background: var(--color-bg-tertiary);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.content-list {
-  list-style: none;
-  margin-bottom: 32px;
-}
+.page { min-height: 100vh; background: var(--color-bg-secondary); }
+.main { max-width: 800px; margin: 0 auto; padding: 28px 24px 64px; }
+.page-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; }
+.content-list { list-style: none; margin-bottom: 32px; }
 .content-row {
   display: flex;
   justify-content: space-between;
@@ -177,37 +120,16 @@ onMounted(() => {
   border-radius: var(--radius-md);
   margin-bottom: 8px;
 }
-.title {
-  font-weight: 600;
-  margin-right: 8px;
-}
-.btn-sm {
-  padding: 6px 12px;
-  font-size: 13px;
-}
+.title { font-weight: 600; margin-right: 8px; }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
 .card {
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 20px;
 }
-.sub-title {
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-.hint {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  margin-bottom: 12px;
-}
-.hint code {
-  font-size: 12px;
-}
-.form-label {
-  display: block;
-  font-size: 13px;
-  margin-bottom: 6px;
-}
+.sub-title { font-size: 16px; margin-bottom: 12px; }
+.form-label { display: block; font-size: 13px; margin-bottom: 6px; }
 .form-input {
   width: 100%;
   padding: 10px 12px;
@@ -216,24 +138,8 @@ onMounted(() => {
   margin-bottom: 12px;
   font-size: 14px;
 }
-.form-input.area {
-  resize: vertical;
-}
-.success {
-  margin-top: 12px;
-  color: var(--color-success);
-  font-size: 14px;
-}
-.muted {
-  color: var(--color-text-muted);
-}
-.error {
-  color: var(--color-danger);
-  margin-bottom: 8px;
-}
-.mock-hint {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  margin-bottom: 12px;
-}
+.form-input.area { resize: vertical; }
+.success { margin-top: 12px; color: var(--color-success); font-size: 14px; }
+.muted { color: var(--color-text-muted); }
+.error { color: var(--color-danger); margin-bottom: 8px; }
 </style>

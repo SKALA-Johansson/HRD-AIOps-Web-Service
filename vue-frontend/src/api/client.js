@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { useAuthStore, DEV_PREVIEW_TOKEN } from '@/store/auth.js'
+import { useAuthStore } from '@/store/auth.js'
 
 /** Spring Cloud Gateway 기준: /api/v1 */
 export const api = axios.create({
@@ -8,10 +8,28 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' }
 })
 
+function readClaimFromJwt(token, claimKey) {
+  try {
+    const payload = token?.split('.')?.[1]
+    if (!payload) return null
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const raw = window.atob(base64)
+    const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0))
+    const decoded = JSON.parse(new TextDecoder().decode(bytes))
+    return decoded?.[claimKey] ?? null
+  } catch {
+    return null
+  }
+}
+
 api.interceptors.request.use((config) => {
   const auth = useAuthStore()
   if (auth.accessToken) {
     config.headers.Authorization = `Bearer ${auth.accessToken}`
+    const employeeId = readClaimFromJwt(auth.accessToken, 'username')
+    if (employeeId) {
+      config.headers['X-Employee-Id'] = employeeId
+    }
   }
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type']
@@ -24,10 +42,6 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       const auth = useAuthStore()
-      /** 개발 미리보기 중에는 API 실패만 표시하고 로그인으로 보내지 않음 */
-      if (auth.accessToken === DEV_PREVIEW_TOKEN && import.meta.env.DEV) {
-        return Promise.reject(err)
-      }
       auth.logout(false)
       window.location.href = '/login'
     }

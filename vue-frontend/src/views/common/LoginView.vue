@@ -6,11 +6,10 @@
     <div class="auth-card fade-in-up">
       <router-link to="/" class="back-link">← 홈</router-link>
       <h1 class="title">로그인</h1>
-      <p class="desc">이메일과 비밀번호로 로그인합니다. (API: POST <code>/auth/login</code>)</p>
 
       <form class="form" @submit.prevent="submit">
-        <label class="form-label">이메일</label>
-        <input v-model="email" type="email" class="form-input" required autocomplete="username" />
+        <label class="form-label">사원번호 / 아이디</label>
+        <input v-model="username" type="text" class="form-input" required autocomplete="username" />
 
         <label class="form-label">비밀번호</label>
         <input
@@ -42,7 +41,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth.js'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
-const email = ref('')
+const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -55,7 +54,7 @@ async function submit() {
   error.value = ''
   loading.value = true
   try {
-    await auth.login(email.value, password.value)
+    await auth.login(username.value, password.value)
     const redir = route.query.redirect
     if (typeof redir === 'string' && redir.startsWith('/')) {
       router.replace(redir)
@@ -64,7 +63,7 @@ async function submit() {
     if (auth.role === 'HR') router.replace('/hr/dashboard')
     else router.replace('/learning')
   } catch (e) {
-    error.value = e.response?.data?.message || e.message || '로그인에 실패했습니다.'
+    error.value = '이메일 또는 비밀번호를 확인해 주세요.'
   } finally {
     loading.value = false
   }

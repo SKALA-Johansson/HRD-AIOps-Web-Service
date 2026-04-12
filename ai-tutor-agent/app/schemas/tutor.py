@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 class TutorSessionRequest(BaseModel):
     """POST /tutor/sessions - api.md §18 (질문+답변 통합)"""
-    userId: int
+    userId: str
     curriculumId: Optional[str] = "0"
     question: str
 

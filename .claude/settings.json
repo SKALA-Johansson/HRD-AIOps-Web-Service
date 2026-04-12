@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import pypdf, requests; print\\('OK'\\)\")",
+      "Bash(python3 -c ':*)",
+      "Bash(curl -s \"http://localhost:10022/curriculums/standard\")",
+      "Bash(grep -E \"\\\\.java$\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:9006/api/v1/reports/users)"
+    ]
+  }
+}

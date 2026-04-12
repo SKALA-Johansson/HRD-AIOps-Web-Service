@@ -33,6 +33,19 @@ public class ContentController {
                 .body(ApiResponse.success("Content uploaded and ingested successfully."));
     }
 
+    @PostMapping(value = "/department-required-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<Void>> uploadDepartmentRequiredPdf(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "title", required = false) String title,
+            @RequestParam(value = "category", required = false) String category) {
+        String resolvedTitle = (title != null && !title.isBlank()) ? title : file.getOriginalFilename();
+        String resolvedCategory = (category != null && !category.isBlank()) ? category : "부서필수";
+        log.info("Uploading department required PDF: {}", resolvedTitle);
+        contentService.uploadAndIngest(file, resolvedTitle, resolvedCategory);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Department required PDF uploaded successfully."));
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<Void>> registerContent(@RequestBody ContentRequest request) {
         log.info("Registering content: {}", request.getTitle());

@@ -10,23 +10,11 @@
             성장 인사이트를 한곳에서
           </h1>
           <p class="hero-desc">
-            Goal Setter → Curriculum Designer → AI Tutor → Growth Report로 이어지는 스마트 HRD AIOps
-            플로우를 지원합니다. (Gateway <code>/api/v1</code> 연동 전제)
+            Goal Setter → Curriculum Designer → AI Tutor → Growth Report로 이어지는 스마트 HRD AIOps 플로우를 지원합니다.
           </p>
           <div class="hero-actions">
             <router-link to="/signup" class="btn btn-primary btn-lg">시작하기</router-link>
             <router-link to="/login" class="btn btn-outline btn-lg">로그인</router-link>
-          </div>
-          <!-- 개발 전용: 백엔드 없이 보호된 화면 UI 확인 -->
-          <div v-if="isDev" class="dev-preview-panel">
-            <p class="dev-preview-label">로컬 개발 — DB 없이 화면만 볼 때</p>
-            <div class="dev-preview-btns">
-              <button type="button" class="btn btn-ghost btn-sm" @click="previewEmployee">
-                신입 화면 (학습·과제·진도)
-              </button>
-              <button type="button" class="btn btn-ghost btn-sm" @click="previewHr">HR 화면</button>
-            </div>
-            <DevScenarioLinks />
           </div>
         </div>
         <div class="hero-visual fade-in">
@@ -54,23 +42,7 @@
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
-import DevScenarioLinks from '@/components/DevScenarioLinks.vue'
-import { useAuthStore } from '@/store/auth.js'
-
-const isDev = import.meta.env.DEV
-const auth = useAuthStore()
-const router = useRouter()
-
-function previewEmployee() {
-  auth.startDevPreview('EMPLOYEE')
-  router.push('/learning')
-}
-function previewHr() {
-  auth.startDevPreview('HR')
-  router.push('/hr/dashboard')
-}
 </script>
 
 <style scoped>
@@ -116,12 +88,7 @@ function previewHr() {
   font-size: 15px;
   margin-bottom: 28px;
   max-width: 480px;
-}
-.hero-desc code {
-  font-size: 13px;
-  background: var(--color-bg-tertiary);
-  padding: 2px 6px;
-  border-radius: 4px;
+  line-height: 1.6;
 }
 .hero-actions {
   display: flex;
@@ -131,25 +98,6 @@ function previewHr() {
 .btn-lg {
   padding: 12px 24px;
   font-size: 15px;
-}
-.dev-preview-panel {
-  margin-top: 28px;
-  padding: 16px 18px;
-  border-radius: var(--radius-lg);
-  border: 1px dashed var(--color-border-hover);
-  background: var(--color-bg-primary);
-  max-width: 520px;
-}
-.dev-preview-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-bottom: 10px;
-}
-.dev-preview-btns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 .hero-visual {
   display: flex;

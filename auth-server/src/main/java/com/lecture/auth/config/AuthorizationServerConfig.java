@@ -105,7 +105,9 @@ public class AuthorizationServerConfig {
                                 "/actuator/info",
                                 "/.well-known/appspecific/**",
                                 "/api/v1/auth/signup",
-                                "/api/v1/auth/login"
+                                "/api/v1/auth/login",
+                                "/api/v1/profiles/register",
+                                "/api/v1/profiles/employees"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

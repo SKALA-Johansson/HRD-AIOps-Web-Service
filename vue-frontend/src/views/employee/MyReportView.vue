@@ -3,7 +3,6 @@
     <AppHeader />
     <main class="main">
       <h1 class="page-title">성장 리포트</h1>
-      <p class="page-desc">GET <code>/reports/users/{userId}</code></p>
 
       <div class="row">
         <div>
@@ -56,7 +55,7 @@ async function load() {
     const res = await reportsApi.userReport(userId.value)
     report.value = res.data?.data ?? null
   } catch (e) {
-    error.value = e.response?.data?.message || e.message || '조회 실패'
+    error.value = '성장 리포트를 불러오지 못했습니다.'
   } finally {
     loading.value = false
   }

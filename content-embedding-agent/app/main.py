@@ -1,5 +1,5 @@
 """
-Embedding Agent Service
+Content Embedding Agent Service
 포트: 10028
 역할: BGE-M3 임베딩 생성 및 Qdrant 벡터 저장/검색
 """
@@ -47,8 +47,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Embedding Agent Service",
-    description="BGE-M3 임베딩 생성 및 Qdrant 벡터 저장/검색 서비스",
+    title="Content Embedding Agent Service",
+    description="콘텐츠 임베딩 생성 및 Qdrant 벡터 저장/검색 서비스 (BGE-M3)",
     version="1.0.0",
     lifespan=lifespan,
 )

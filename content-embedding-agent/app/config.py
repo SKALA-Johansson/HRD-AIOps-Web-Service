@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Service
-    SERVICE_NAME: str = "embedding-agent"
+    SERVICE_NAME: str = "content-embedding-agent"
     SERVICE_PORT: int = 10028
 
     # Eureka
@@ -13,12 +13,11 @@ class Settings(BaseSettings):
     # Qdrant
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
-    QDRANT_COLLECTION: str = "bge_m3_docs"
+    QDRANT_COLLECTION: str = "embedded_docs"
 
-    # BGE-M3
-    BGE_M3_MODEL_NAME: str = "BAAI/bge-m3"
-    BGE_M3_DEVICE: str = "cpu"
-    BGE_BATCH_SIZE: int = 16
+    # OpenAI
+    OPENAI_API_KEY: str = "sk-your-key-here"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
     class Config:
         env_file = ".env"

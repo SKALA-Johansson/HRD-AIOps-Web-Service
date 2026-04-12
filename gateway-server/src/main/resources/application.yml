@@ -4,21 +4,32 @@ server:
 spring:
   application:
     name: gateway-server
+  codec:
+    max-in-memory-size: 50MB
   cloud:
     gateway:
+      httpclient:
+        connect-timeout: 10000
+        response-timeout: 120s
       routes:
         - id: auth-server
           uri: lb://AUTH-SERVER
           predicates:
             - Path=/api/v1/auth/**, /api/v1/profiles/**
-        - id: goal-service
-          uri: lb://GOAL-SETTER-SERVICE
+        # goals → FastAPI goal-setter-agent (10021) — /api/v1/goals/... → /goals/...
+        - id: goal-setter-agent
+          uri: http://goal-setter-agent:10021
           predicates:
             - Path=/api/v1/goals/**
-        - id: curriculum-service
-          uri: lb://CURRICULUM-SERVICE
+          filters:
+            - RewritePath=/api/v1/(?<segment>.*), /${segment}
+        # curriculums → FastAPI curriculum-designer-agent (10022) — /api/v1/curriculums/... → /curriculums/...
+        - id: curriculum-designer-agent
+          uri: lb://CURRICULUM-DESIGNER-AGENT
           predicates:
             - Path=/api/v1/curriculums/**
+          filters:
+            - RewritePath=/api/v1/(?<segment>.*), /${segment}
         - id: approval-service
           uri: lb://APPROVAL-SERVICE
           predicates:
@@ -27,10 +38,13 @@ spring:
           uri: lb://LEARNING-SERVICE
           predicates:
             - Path=/api/v1/learning/**
-        - id: tutor-service
-          uri: lb://TUTOR-SERVICE
+        # tutor → FastAPI ai-tutor-agent (10024) — /api/v1/tutor/... → /tutor/...
+        - id: ai-tutor-agent
+          uri: http://ai-tutor-agent:10024
           predicates:
             - Path=/api/v1/tutor/**
+          filters:
+            - RewritePath=/api/v1/(?<segment>.*), /${segment}
         - id: report-service
           uri: lb://REPORT-SERVICE
           predicates:

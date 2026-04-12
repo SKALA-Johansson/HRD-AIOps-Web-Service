@@ -4,10 +4,15 @@ import com.lecture.learning.model.Progress;
 import com.lecture.learning.repository.ProgressRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -17,6 +22,10 @@ import java.util.Map;
 public class CurriculumApprovedConsumer {
 
     private final ProgressRepository progressRepository;
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @Value("${external.curriculum-designer-url:http://curriculum-designer-agent:10022}")
+    private String curriculumDesignerUrl;
 
     @KafkaListener(topics = "learning-events", groupId = "learning-group")
     @Transactional
@@ -29,30 +38,89 @@ public class CurriculumApprovedConsumer {
             return;
         }
 
-        if ("Curriculum.Approved".equals(eventType)) {
-            String targetId = payloadMap.get("target_id") == null ? "" : String.valueOf(payloadMap.get("target_id"));
-            String userId = payloadMap.get("user_id") == null ? "unknown-user" : String.valueOf(payloadMap.get("user_id"));
+        if (!"Curriculum.Approved".equals(eventType)) {
+            return;
+        }
 
-            // 사원의 학습 진도 레코드 초기화 (기존에 없다면)
-            // 실제 운영 환경에서는 Curriculum-Service를 통해 모듈 목록을 가져와 각각 생성해야 함
-            // 여기서는 예시로 'targetId'가 가리키는 커리큘럼의 학습 활성화를 의미함
-            
-            // 임시 moduleId (실제로는 여러 모듈이 생성되어야 함)
-            if (targetId.isBlank()) {
-                return;
+        String curriculumId = firstNonBlank(
+                payloadMap.get("curriculum_id"),
+                payloadMap.get("target_id")
+        );
+        String userId = firstNonBlank(
+                payloadMap.get("employee_id"),
+                payloadMap.get("user_id")
+        );
+
+        if (curriculumId.isBlank() || userId.isBlank()) {
+            log.warn("Skip learning activation due to missing fields. curriculumId={}, userId={}", curriculumId, userId);
+            return;
+        }
+
+        List<String> moduleIds = fetchModuleIds(curriculumId);
+        if (moduleIds.isEmpty()) {
+            log.warn("No modules found for curriculum {}. Skip progress initialization.", curriculumId);
+            return;
+        }
+
+        int initialized = 0;
+        for (String moduleId : moduleIds) {
+            if (moduleId == null || moduleId.isBlank()) {
+                continue;
             }
-            String dummyModuleId = "mod-" + targetId.substring(0, Math.min(8, targetId.length()));
-            
+            if (progressRepository.existsByUserIdAndModuleId(userId, moduleId)) {
+                continue;
+            }
             Progress progress = Progress.builder()
                     .userId(userId)
-                    .moduleId(dummyModuleId)
+                    .moduleId(moduleId)
                     .status("NOT_STARTED")
                     .completionRate(0.0)
                     .lastAccessedAt(LocalDateTime.now())
                     .build();
-
             progressRepository.save(progress);
-            log.info("Initialized learning progress for user: {}, module: {}", progress.getUserId(), progress.getModuleId());
+            initialized++;
         }
+
+        log.info("Initialized learning progress rows: userId={}, curriculumId={}, modules={}", userId, curriculumId, initialized);
+    }
+
+    private List<String> fetchModuleIds(String curriculumId) {
+        List<String> moduleIds = new ArrayList<>();
+        try {
+            String endpoint = curriculumDesignerUrl + "/curriculums/" + curriculumId;
+            ResponseEntity<Map> response = restTemplate.getForEntity(endpoint, Map.class);
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                return moduleIds;
+            }
+
+            Object dataObj = response.getBody().get("data");
+            if (!(dataObj instanceof Map<?, ?> dataMap)) {
+                return moduleIds;
+            }
+            Object modulesObj = dataMap.get("modules");
+            if (!(modulesObj instanceof List<?> modules)) {
+                return moduleIds;
+            }
+
+            for (Object moduleObj : modules) {
+                if (moduleObj instanceof Map<?, ?> m && m.get("moduleId") != null) {
+                    moduleIds.add(String.valueOf(m.get("moduleId")));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch modules for curriculum {}: {}", curriculumId, e.getMessage());
+        }
+        return moduleIds;
+    }
+
+    private String firstNonBlank(Object... values) {
+        for (Object value : values) {
+            if (value == null) continue;
+            String s = String.valueOf(value).trim();
+            if (!s.isBlank()) {
+                return s;
+            }
+        }
+        return "";
     }
 }

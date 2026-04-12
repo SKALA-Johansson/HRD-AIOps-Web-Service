@@ -102,7 +102,7 @@ async function submit() {
     }
     msg.value = '저장되었습니다.'
   } catch (e) {
-    err.value = e.response?.data?.message || e.message || '실패'
+    err.value = '저장에 실패했습니다. 잠시 후 다시 시도해 주세요.'
   } finally {
     loading.value = false
   }
