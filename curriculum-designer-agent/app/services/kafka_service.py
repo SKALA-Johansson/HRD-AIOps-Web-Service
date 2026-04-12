@@ -204,3 +204,162 @@ async def consume_curriculum_events(app_state: dict):
         logger.info("[Kafka] Consumer 종료 요청")
     finally:
         await consumer.stop()
+
+
+async def publish_week_completed(
+    user_id: str,
+    curriculum_id: str,
+    week_number: int,
+    total_modules: int,
+    scores: list[float],
+):
+    """Learning.WeekCompleted 이벤트 발행 → learning-logs 토픽"""
+    producer = await get_producer()
+    avg_score = sum(scores) / len(scores) if scores else 0.0
+    event = {
+        "event_type": "Learning.WeekCompleted",
+        "event_id": f"{user_id}_{curriculum_id}_week{week_number}",
+        "timestamp": datetime.utcnow().isoformat(),
+        "source": settings.SERVICE_NAME,
+        "payload": {
+            "user_id": user_id,
+            "curriculum_id": curriculum_id,
+            "week_number": week_number,
+            "total_modules": total_modules,
+            "average_score": avg_score,
+            "scores": scores,
+            "completed_at": datetime.utcnow().isoformat(),
+        },
+    }
+    await producer.send("learning-logs", value=event)
+    logger.info(
+        f"[Kafka] Learning.WeekCompleted 발행: user={user_id}, "
+        f"curriculum={curriculum_id}, week={week_number}"
+    )
+
+
+async def consume_learning_logs(app_state: dict):
+    """
+    learning-logs 토픽에서 Learning.QuizCompleted 이벤트를 소비:
+    - ModuleCompletion 기록
+    - 해당 주차 모든 모듈 완료 확인
+    - 완료 시 Learning.WeekCompleted 발행
+    """
+    from app.database import SessionLocal
+    from app.models.curriculum import Module, ModuleCompletion
+
+    consumer = AIOKafkaConsumer(
+        "learning-logs",
+        bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+        group_id="curriculum-designer-learning-group",
+        value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+        auto_offset_reset="earliest",
+        enable_auto_commit=True,
+    )
+
+    await consumer.start()
+    logger.info("[Kafka] Learning-logs Consumer 시작")
+
+    try:
+        async for msg in consumer:
+            event = msg.value
+            event_type = event.get("event_type")
+            payload = event.get("payload", {})
+
+            if event_type != "Learning.QuizCompleted":
+                continue
+
+            user_id = payload.get("user_id")
+            module_id = payload.get("module_id")
+            curriculum_id = payload.get("curriculum_id")
+            week_number = payload.get("week_number")
+
+            if not all([user_id, module_id, curriculum_id, week_number]):
+                logger.debug(f"[WeekCheck] 필드 누락으로 스킵: {payload}")
+                continue
+
+            logger.info(
+                f"[WeekCheck] QuizCompleted: user={user_id}, "
+                f"module={module_id}, week={week_number}"
+            )
+
+            db = SessionLocal()
+            try:
+                # 완료 기록 upsert
+                existing = (
+                    db.query(ModuleCompletion)
+                    .filter(
+                        ModuleCompletion.user_id == user_id,
+                        ModuleCompletion.module_id == module_id,
+                    )
+                    .first()
+                )
+                if not existing:
+                    db.add(
+                        ModuleCompletion(
+                            user_id=user_id,
+                            module_id=module_id,
+                            curriculum_id=curriculum_id,
+                            week_number=int(week_number),
+                            passed=payload.get("passed"),
+                            score=payload.get("score"),
+                        )
+                    )
+                    db.commit()
+
+                # 해당 주차의 전체 모듈 조회
+                all_modules = (
+                    db.query(Module)
+                    .filter(
+                        Module.curriculum_id == curriculum_id,
+                        Module.week_number == int(week_number),
+                    )
+                    .all()
+                )
+                if not all_modules:
+                    logger.warning(
+                        f"[WeekCheck] curriculum={curriculum_id} week={week_number} 모듈 없음"
+                    )
+                    continue
+
+                all_module_ids = {m.id for m in all_modules}
+
+                # 이 사용자가 완료한 모듈 ID 집합
+                completions = (
+                    db.query(ModuleCompletion)
+                    .filter(
+                        ModuleCompletion.user_id == user_id,
+                        ModuleCompletion.curriculum_id == curriculum_id,
+                        ModuleCompletion.week_number == int(week_number),
+                    )
+                    .all()
+                )
+                completed_ids = {c.module_id for c in completions}
+
+                logger.info(
+                    f"[WeekCheck] 완료: {len(completed_ids)}/{len(all_module_ids)} 모듈"
+                )
+
+                if all_module_ids <= completed_ids:
+                    scores = [c.score for c in completions if c.score is not None]
+                    logger.info(
+                        f"[WeekCheck] 주차 완료! user={user_id}, week={week_number} "
+                        f"→ Learning.WeekCompleted 발행"
+                    )
+                    await publish_week_completed(
+                        user_id=user_id,
+                        curriculum_id=curriculum_id,
+                        week_number=int(week_number),
+                        total_modules=len(all_module_ids),
+                        scores=scores,
+                    )
+
+            except Exception as e:
+                logger.error(f"[WeekCheck] 처리 오류: {e}", exc_info=True)
+            finally:
+                db.close()
+
+    except asyncio.CancelledError:
+        logger.info("[Kafka] Learning-logs Consumer 종료 요청")
+    finally:
+        await consumer.stop()

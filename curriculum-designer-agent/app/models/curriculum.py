@@ -1,7 +1,7 @@
 import uuid
 import json
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, Enum as SAEnum
+from sqlalchemy import Column, String, Integer, Float, Text, DateTime, ForeignKey, Boolean, Enum as SAEnum, UniqueConstraint
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -81,3 +81,21 @@ class Module(Base):
 
     def set_assignments(self, assignments: list):
         self.assignments = json.dumps(assignments, ensure_ascii=False)
+
+
+class ModuleCompletion(Base):
+    """신입사원의 모듈 완료 기록 (Learning.QuizCompleted 이벤트 기반)"""
+    __tablename__ = "module_completions"
+
+    id = Column(CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(100), nullable=False, index=True)
+    module_id = Column(String(100), nullable=False, index=True)
+    curriculum_id = Column(String(100), nullable=False, index=True)
+    week_number = Column(Integer, nullable=False)
+    passed = Column(Boolean, nullable=True)
+    score = Column(Float, nullable=True)
+    completed_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "module_id", name="uq_user_module_completion"),
+    )

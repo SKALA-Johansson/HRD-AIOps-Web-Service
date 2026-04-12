@@ -277,16 +277,6 @@ CREATE TABLE IF NOT EXISTS approvals (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
--- 7) Additional Dummy Data
--- ---------------------------------------------------------------------
-USE curriculum_db;
-
--- AI Development Team Specific Sample
-INSERT INTO curriculums (id, goal_id, employee_id, employee_name, department, role, career_level, title, description, total_weeks, status)
-VALUES ('cur-ai-dept-001', 'global-goal-001', 'DEPARTMENT_WIDE', 'AI Development Team', 'AI / 데이터 부서', 'Common', 'JUNIOR', 'AI개발팀 온보딩 커리큘럼', 'AI개발팀 필수 역량 강화 과정', 4, 'active');
-
-INSERT INTO modules (id, curriculum_id, week_number, title, description, content, learning_objectives, resources, assignments, estimated_hours)
-VALUES ('mod-dbms-001', 'cur-ai-dept-001', 1, 'DBMS 기초 및 실습', 'RDB 개념 및 SQL 실습', 'SQL 기초/심화', 'SQL 작성 능력 확보', 'DBMS 교육 자료', 'DB 쿼리 작성 과제', 8);
-
-INSERT INTO modules (id, curriculum_id, week_number, title, description, content, learning_objectives, resources, assignments, estimated_hours)
-VALUES ('mod-eng-001', 'cur-ai-dept-001', 2, 'AGS_Global Biz English', '글로벌 비즈니스 영어', '비즈니스 메일/회의', '영어 의사소통 능력 배양', 'English Guide', '롤플레잉 과제', 6);
+-- 7) 표준 커리큘럼은 curriculum-designer-agent 시작 시
+--    standard_curriculums / standard_modules 테이블에 자동 시드됩니다.
+--    (app/services/seeder.py 참고)

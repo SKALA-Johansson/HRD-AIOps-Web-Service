@@ -496,6 +496,55 @@ def _strictly_align_generated_modules(
     return aligned
 
 
+def _align_modules_from_standard(
+    generated_modules: list[dict],
+    uploaded_contents: list[dict],
+) -> list[dict]:
+    """
+    표준 커리큘럼 기반 생성 결과 정합.
+    - LLM이 INCLUDE/ADVANCED로 포함한 모듈을 그대로 사용
+    - 업로드된 교육 콘텐츠는 리소스로만 첨부 (모듈 게이팅 없음)
+    - 주차 번호 1부터 재할당
+    """
+    aligned: list[dict] = []
+    for mod in generated_modules or []:
+        if not isinstance(mod, dict):
+            continue
+
+        title = str(mod.get("title") or "").strip()
+        if not title:
+            continue
+
+        # 업로드 콘텐츠에서 관련 리소스 탐색 (첨부만, 배제 기준 아님)
+        probe = {
+            "title": title,
+            "description": str(mod.get("description") or ""),
+            "topics": _sanitize_to_list(mod.get("learning_objectives", [])),
+        }
+        matched = _match_contents_for_module(probe, uploaded_contents, limit=2) if uploaded_contents else []
+
+        resources = _sanitize_to_list(mod.get("resources", []))
+        for content in matched:
+            resource_text = _content_to_resource_text(content)
+            if resource_text and resource_text not in resources:
+                resources.append(resource_text)
+
+        aligned.append(
+            {
+                "week_number": len(aligned) + 1,
+                "title": title,
+                "description": str(mod.get("description") or "").strip(),
+                "content": str(mod.get("content") or "").strip(),
+                "learning_objectives": _sanitize_to_list(mod.get("learning_objectives", [])),
+                "assignments": _sanitize_to_list(mod.get("assignments", [])),
+                "estimated_hours": _safe_int(mod.get("estimated_hours", 8), default=8),
+                "resources": resources,
+            }
+        )
+
+    return aligned
+
+
 def _select_standard_curriculum(
     db: Session,
     department: str,
@@ -632,21 +681,6 @@ async def _run_curriculum_generation(curriculum_id: str, goal_id: str, existing_
             "success_criteria": "실무 적용 가능 수준 도달",
         }]
         uploaded_contents = await _fetch_uploaded_contents()
-        if not uploaded_contents:
-            curriculum.title = curriculum.title or "등록 콘텐츠 기반 커리큘럼"
-            curriculum.description = "현재 등록된 교육 콘텐츠가 없어 모듈을 생성하지 않았습니다."
-            curriculum.total_weeks = 0
-            curriculum.status = "draft"
-            db.commit()
-            await publish_event("Curriculum.Created", {
-                "curriculum_id": curriculum.id,
-                "goal_id": goal_id,
-                "employee_id": curriculum.employee_id,
-                "title": curriculum.title,
-            })
-            logger.warning(f"[Curriculum] 등록 콘텐츠 없음으로 빈 커리큘럼 생성: curriculum_id={curriculum.id}")
-            return
-        module_content_map: dict[str, list[dict]] = {}
 
         standard = _select_standard_curriculum(
             db=db,
@@ -660,7 +694,8 @@ async def _run_curriculum_generation(curriculum_id: str, goal_id: str, existing_
         )
 
         if standard and standard.modules:
-            # 정석 기반 맞춤 생성
+            # 표준 커리큘럼 기반 맞춤 생성
+            # 1) 표준 모듈 전체 로드
             standard_modules = [
                 {
                     "week_number": m.week_number,
@@ -673,15 +708,34 @@ async def _run_curriculum_generation(curriculum_id: str, goal_id: str, existing_
                 for m in standard.modules
             ]
 
-            # 코드 레벨 선필터: 보유 역량과 완전 중복되는 모듈 제거/토픽 제외
-            filtered_modules = _filter_modules_by_existing_skills(standard_modules, existing_skills)
-            # 현재 등록된 교육 콘텐츠와 매칭되는 모듈만 포함
-            filtered_modules, module_content_map = _filter_modules_by_uploaded_contents(
-                filtered_modules,
-                uploaded_contents,
-            )
+            # 2) 코드 레벨 사전 필터: 보유 역량과 완전히 겹치는 모듈 제거
+            if existing_skills:
+                before_count = len(standard_modules)
+                standard_modules = _filter_modules_by_existing_skills(standard_modules, existing_skills)
+                logger.info(
+                    f"[Personalize] 사전 필터: {before_count}개 → {len(standard_modules)}개 "
+                    f"({before_count - len(standard_modules)}개 보유 역량으로 제외)"
+                )
+
+            if not standard_modules:
+                # 모든 모듈이 보유 역량으로 제외된 경우 (거의 없지만 방어)
+                curriculum.title = curriculum.title or f"{curriculum.department} 맞춤 커리큘럼"
+                curriculum.description = "보유 역량 분석 결과 모든 표준 모듈을 이미 습득한 것으로 판단되어 추가 모듈이 없습니다."
+                curriculum.total_weeks = 0
+                curriculum.status = "draft"
+                db.commit()
+                await publish_event("Curriculum.Created", {
+                    "curriculum_id": curriculum.id,
+                    "goal_id": goal_id,
+                    "employee_id": curriculum.employee_id,
+                    "title": curriculum.title,
+                })
+                logger.info(f"[Curriculum] 모든 표준 모듈 보유 역량 제외: curriculum_id={curriculum.id}")
+                return
+
+            # 3) LLM으로 2차 개인화 (INCLUDE/ADVANCED/EXCLUDE 판단)
             curriculum_data = await curriculum_designer_agent.design_personalized_curriculum(
-                standard_modules=filtered_modules,
+                standard_modules=standard_modules,
                 employee_name=curriculum.employee_name,
                 department=curriculum.department,
                 role=curriculum.role,
@@ -689,10 +743,39 @@ async def _run_curriculum_generation(curriculum_id: str, goal_id: str, existing_
                 existing_skills=existing_skills,
                 goals=mock_goals,
                 content_catalog=uploaded_contents,
-                module_content_map=module_content_map,
+                module_content_map={},
+            )
+
+            skill_analysis_raw = curriculum_data.get("skill_analysis") or {}
+            excluded_module_titles = {
+                d.get("module_title", "")
+                for d in skill_analysis_raw.get("decisions", [])
+                if isinstance(d, dict) and d.get("action", "").upper() == "EXCLUDE"
+            }
+            logger.info(f"[Curriculum] LLM EXCLUDE 판정 표준 모듈: {excluded_module_titles}")
+
+            # 4) 표준 기반 정합: 업로드 콘텐츠는 리소스로만 첨부 (모듈 게이팅 없음)
+            aligned_modules = _align_modules_from_standard(
+                generated_modules=curriculum_data.get("modules", []),
+                uploaded_contents=uploaded_contents,
             )
         else:
-            # 정석 커리큘럼 없음 → 자유 생성
+            # 표준 커리큘럼 없음 → 업로드 콘텐츠 기반 자유 생성
+            if not uploaded_contents:
+                curriculum.title = curriculum.title or "등록 콘텐츠 기반 커리큘럼"
+                curriculum.description = "현재 등록된 교육 콘텐츠가 없어 모듈을 생성하지 않았습니다."
+                curriculum.total_weeks = 0
+                curriculum.status = "draft"
+                db.commit()
+                await publish_event("Curriculum.Created", {
+                    "curriculum_id": curriculum.id,
+                    "goal_id": goal_id,
+                    "employee_id": curriculum.employee_id,
+                    "title": curriculum.title,
+                })
+                logger.warning(f"[Curriculum] 등록 콘텐츠 없음으로 빈 커리큘럼 생성: curriculum_id={curriculum.id}")
+                return
+
             curriculum_data = await curriculum_designer_agent.design_curriculum(
                 employee_name=curriculum.employee_name,
                 department=curriculum.department,
@@ -704,24 +787,19 @@ async def _run_curriculum_generation(curriculum_id: str, goal_id: str, existing_
                 content_catalog=uploaded_contents,
             )
 
-        curriculum.title = curriculum_data.get("title", curriculum.title)
-        curriculum.description = curriculum_data.get("description", "")
+            skill_analysis_raw = curriculum_data.get("skill_analysis") or {}
+            excluded_content_titles = {
+                d.get("module_title", "")
+                for d in skill_analysis_raw.get("decisions", [])
+                if isinstance(d, dict) and d.get("action", "").upper() == "EXCLUDE"
+            }
 
-        # AI가 EXCLUDE로 판단한 콘텐츠 제목 추출 → fallback에서도 포함 차단
-        skill_analysis_raw = curriculum_data.get("skill_analysis") or {}
-        excluded_content_titles = {
-            d.get("module_title", "")
-            for d in skill_analysis_raw.get("decisions", [])
-            if isinstance(d, dict) and d.get("action", "").upper() == "EXCLUDE"
-        }
-        logger.info(f"[Curriculum] EXCLUDE 판정 콘텐츠: {excluded_content_titles}")
-
-        aligned_modules = _strictly_align_generated_modules(
-            generated_modules=curriculum_data.get("modules", []),
-            uploaded_contents=uploaded_contents,
-            existing_skills=existing_skills,
-            excluded_content_titles=excluded_content_titles,
-        )
+            aligned_modules = _strictly_align_generated_modules(
+                generated_modules=curriculum_data.get("modules", []),
+                uploaded_contents=uploaded_contents,
+                existing_skills=existing_skills,
+                excluded_content_titles=excluded_content_titles,
+            )
         curriculum.total_weeks = len(aligned_modules)
         curriculum.status = "draft"
 
@@ -1021,7 +1099,53 @@ def get_curriculums_by_employee(employee_id: str, db: Session = Depends(get_db))
     )
 
 
-# ── 모듈 콘텐츠 생성 ─────────────────────────────────────────────────
+# ── 모듈 상세 조회 (플랫, curriculum_id 불필요) ──────────────────────
+
+@router.get("/modules/{module_id}")
+async def get_module_detail(module_id: str, db: Session = Depends(get_db)):
+    """
+    GET /curriculums/modules/{moduleId}
+    모듈 상세 조회: 설명·학습목표·내용·과제·리소스 반환.
+    content가 비어있으면 LLM으로 즉시 생성 후 저장.
+    """
+    module = db.query(Module).filter(Module.id == module_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    curriculum = db.query(Curriculum).filter(Curriculum.id == module.curriculum_id).first()
+
+    if not module.content:
+        try:
+            content = await curriculum_designer_agent.generate_module_content(
+                module_title=module.title,
+                learning_objectives=module.get_learning_objectives(),
+                role=curriculum.role if curriculum else "",
+                department=curriculum.department if curriculum else "",
+            )
+            module.content = content
+            db.commit()
+        except Exception as e:
+            logger.warning(f"[Module] 콘텐츠 생성 실패: {e}")
+
+    return ApiResponse.ok(
+        data={
+            "moduleId": module.id,
+            "curriculumId": module.curriculum_id,
+            "week": module.week_number,
+            "title": module.title,
+            "description": module.description or "",
+            "content": module.content or "",
+            "learningObjectives": module.get_learning_objectives(),
+            "resources": module.get_resources(),
+            "assignments": module.get_assignments(),
+            "estimatedHours": module.estimated_hours,
+        },
+        code="CURRICULUM-200",
+        message="모듈 상세 조회 성공",
+    )
+
+
+# ── 모듈 콘텐츠 생성 (레거시 호환) ──────────────────────────────────
 
 @router.get("/{curriculum_id}/modules/{module_id}/contents")
 async def get_module_content(curriculum_id: str, module_id: str, db: Session = Depends(get_db)):

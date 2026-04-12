@@ -193,6 +193,104 @@ class AITutorAgent:
         result["max_score"] = max_score
         return result
 
+    async def generate_quiz(
+        self,
+        module_title: str,
+        learning_objectives: list[str],
+        content: str = "",
+        num_questions: int = 4,
+    ) -> list[dict]:
+        """모듈 학습 목표 기반 객관식 퀴즈 생성"""
+        objectives_text = "\n".join([f"- {o}" for o in learning_objectives]) or "없음"
+        content_snippet = content[:1500] if content else ""
+
+        user_message = f"""다음 학습 모듈에 대한 퀴즈를 {num_questions}문제 만들어주세요.
+
+[모듈명]
+{module_title}
+
+[학습 목표]
+{objectives_text}
+
+[학습 내용 요약]
+{content_snippet}
+
+반드시 아래 JSON 배열 형식으로만 응답하세요 (다른 텍스트 없이):
+[
+  {{
+    "id": 1,
+    "question": "문제 내용",
+    "options": ["A. 보기1", "B. 보기2", "C. 보기3", "D. 보기4"],
+    "correct_answer": "A",
+    "explanation": "정답 해설",
+    "points": 25
+  }}
+]
+
+규칙:
+- 객관식 4지 선다 (A/B/C/D)
+- correct_answer는 반드시 "A", "B", "C", "D" 중 하나
+- 학습 목표를 직접 검증하는 문제
+- {num_questions}문제, 총 합계 100점 (각 {100 // num_questions}점)
+"""
+
+        messages = [
+            SystemMessage(content="당신은 교육 퀴즈를 만드는 전문가입니다. 반드시 JSON 배열만 반환하세요."),
+            HumanMessage(content=user_message),
+        ]
+
+        response = await self.llm.ainvoke(messages)
+        content_str = response.content.strip()
+        if "```json" in content_str:
+            content_str = content_str.split("```json")[1].split("```")[0].strip()
+        elif "```" in content_str:
+            content_str = content_str.split("```")[1].split("```")[0].strip()
+
+        questions = json.loads(content_str)
+        return questions if isinstance(questions, list) else []
+
+    async def grade_quiz_batch(
+        self,
+        questions: list[dict],
+        student_answers: list[str],
+        user_id: str = "0",
+        module_id: str | None = None,
+    ) -> dict:
+        """여러 퀴즈 문항 일괄 채점 (객관식 자동 채점 + 해설)"""
+        total = 0.0
+        max_total = 0.0
+        per_question = []
+
+        for i, q in enumerate(questions):
+            correct = str(q.get("correct_answer", "")).strip().upper()
+            student = str(student_answers[i] if i < len(student_answers) else "").strip().upper()
+            points = float(q.get("points", 25))
+            max_total += points
+
+            is_correct = correct == student
+            earned = points if is_correct else 0.0
+            total += earned
+
+            per_question.append({
+                "id": q.get("id", i + 1),
+                "question": q.get("question", ""),
+                "correct_answer": correct,
+                "student_answer": student,
+                "is_correct": is_correct,
+                "earned": earned,
+                "points": points,
+                "explanation": q.get("explanation", ""),
+            })
+
+        passed = (total / max_total) >= 0.6 if max_total > 0 else False
+        return {
+            "total_score": total,
+            "max_score": max_total,
+            "passed": passed,
+            "per_question": per_question,
+            "summary": f"{int(total)}/{int(max_total)}점 — {'합격' if passed else '재도전 권장'}",
+        }
+
     async def generate_growth_report(
         self,
         employee_name: str,

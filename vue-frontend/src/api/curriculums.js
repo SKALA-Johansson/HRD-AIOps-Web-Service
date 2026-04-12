@@ -23,5 +23,8 @@ export const curriculumsApi = {
   },
   remove(curriculumId) {
     return api.delete(`/curriculums/${curriculumId}`)
+  },
+  getModule(moduleId) {
+    return api.get(`/curriculums/modules/${moduleId}`)
   }
 }

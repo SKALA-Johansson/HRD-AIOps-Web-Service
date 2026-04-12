@@ -322,30 +322,29 @@ class CurriculumDesignerAgent:
 - TensorFlow, PyTorch, Keras → 머신러닝/딥러닝 기초 보유
 - Kubernetes, Docker → 컨테이너/인프라 기초 보유
 
-[현재 등록된 교육 콘텐츠 목록 - 판단 대상]
-아래 콘텐츠 각각에 대해 이 직원에게 필요한지 판단하세요:
-{content_catalog_text}
+[부서 표준 커리큘럼 모듈 목록 - 판단 대상]
+아래는 {department} 부서 신입사원이 반드시 이수해야 하는 표준 커리큘럼입니다.
+각 모듈에 대해 이 직원에게 필요한지 판단하세요:
+{standard_modules_text}
 
 [교육 목표]
 {goals_text}
-
-[정석 커리큘럼 참고]
-{standard_modules_text}
 
 [참고 교육 자료 (RAG)]
 {rag_text[:2000]}
 
 [역량 기반 포함 판단 규칙 - 반드시 준수]
 1. 보유 역량 목록과 시맨틱 추론 결과를 바탕으로 직원이 이미 아는 내용을 파악하세요.
-2. 위 [현재 등록된 교육 콘텐츠 목록]의 각 항목에 대해 판단하세요:
+2. 위 [부서 표준 커리큘럼 모듈 목록]의 각 모듈에 대해 판단하세요:
    - 직원이 해당 내용을 모른다면 → action: INCLUDE (커리큘럼에 필수 포함)
    - 직원이 이미 기초를 안다면 → action: EXCLUDE (제외, reason에 구체적 근거)
    - 기초는 알지만 심화가 필요하다면 → action: ADVANCED (심화 과정으로 포함)
 3. skill_analysis.detected_skills에 보유 역량 + 시맨틱 추론으로 확장된 역량을 모두 기록하세요.
-4. skill_analysis.decisions에 등록된 교육 콘텐츠 각각에 대한 판단을 빠짐없이 기록하세요.
-   (module_title에 콘텐츠 제목 그대로 사용)
-5. modules 배열에는 INCLUDE/ADVANCED로 판단된 콘텐츠만 포함하고 week_number를 1부터 부여하세요.
-6. 반드시 JSON 형식으로만 응답하세요."""
+4. skill_analysis.decisions에 표준 모듈 각각에 대한 판단을 빠짐없이 기록하세요.
+   (module_title에 표준 모듈 제목 그대로 사용)
+5. modules 배열에는 INCLUDE/ADVANCED로 판단된 모듈만 포함하고 week_number를 1부터 부여하세요.
+6. EXCLUDE된 모듈은 modules에 포함하지 마세요.
+7. 반드시 JSON 형식으로만 응답하세요."""
 
         messages = [
             SystemMessage(content=CURRICULUM_SYSTEM_PROMPT),

@@ -219,6 +219,114 @@ async def grade_assignment_async(
     )
 
 
+class QuizGenerateRequest(BaseModel):
+    module_id: Optional[str] = None
+    module_title: str
+    learning_objectives: list[str] = []
+    content: str = ""
+    num_questions: int = 4
+
+
+class QuizSubmitRequest(BaseModel):
+    user_id: Optional[str] = "0"
+    module_id: Optional[str] = None
+    curriculum_id: Optional[str] = None   # 주차 완료 감지에 필요
+    week_number: Optional[int] = None     # 주차 완료 감지에 필요
+    questions: list[dict]          # generate 때 받은 questions 전체 (correct_answer 포함)
+    student_answers: list[str]     # 학생이 선택한 답 (A/B/C/D), 순서 대응
+
+
+@router.post("/quizzes/generate")
+async def generate_quiz(request: QuizGenerateRequest):
+    """
+    POST /tutor/quizzes/generate
+    모듈 학습 목표 기반 객관식 퀴즈 문제를 생성합니다.
+    """
+    questions = await ai_tutor_agent.generate_quiz(
+        module_title=request.module_title,
+        learning_objectives=request.learning_objectives,
+        content=request.content,
+        num_questions=request.num_questions,
+    )
+    return ApiResponse.ok(
+        data={
+            "moduleId": request.module_id,
+            "questions": questions,
+        },
+        code="TUTOR-200",
+        message=f"퀴즈 {len(questions)}문제가 생성되었습니다.",
+    )
+
+
+@router.post("/quizzes/{quiz_id}/submit")
+async def submit_quiz(
+    quiz_id: str,
+    request: QuizSubmitRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    POST /tutor/quizzes/{quiz_id}/submit
+    퀴즈 답안을 일괄 제출하고 즉시 채점 결과를 반환합니다.
+    """
+    result = await ai_tutor_agent.grade_quiz_batch(
+        questions=request.questions,
+        student_answers=request.student_answers,
+        user_id=request.user_id or "0",
+        module_id=request.module_id,
+    )
+
+    # 세션 + 피드백 기록
+    session = TutorSession(
+        employee_id=request.user_id or "0",
+        employee_name=f"User_{request.user_id or '0'}",
+        module_id=request.module_id,
+        session_type="quiz",
+        status="completed",
+    )
+    session.set_messages([])
+    db.add(session)
+    db.flush()
+
+    feedback = Feedback(
+        session_id=session.id,
+        employee_id=request.user_id or "0",
+        feedback_type="quiz_grading",
+        score=result.get("total_score"),
+        max_score=result.get("max_score"),
+        passed=result.get("passed"),
+        summary=result.get("summary"),
+    )
+    feedback.set_strengths([q["question"] for q in result["per_question"] if q["is_correct"]][:3])
+    feedback.set_weaknesses([q["question"] for q in result["per_question"] if not q["is_correct"]][:3])
+    db.add(feedback)
+    db.commit()
+
+    await publish_learning_completed(
+        user_id=request.user_id or "0",
+        module_id=request.module_id,
+        completion_type="QUIZ",
+        score=result.get("total_score"),
+        max_score=result.get("max_score"),
+        passed=result.get("passed"),
+        curriculum_id=request.curriculum_id,
+        week_number=request.week_number,
+    )
+
+    return ApiResponse.ok(
+        data={
+            "quizId": quiz_id,
+            "score": result.get("total_score"),
+            "maxScore": result.get("max_score"),
+            "passed": result.get("passed"),
+            "summary": result.get("summary"),
+            "perQuestion": result.get("per_question", []),
+            "feedbackId": feedback.id,
+        },
+        code="TUTOR-200",
+        message="퀴즈 채점이 완료되었습니다.",
+    )
+
+
 @router.post("/quizzes/{quiz_id}/grade")
 async def grade_quiz(
     quiz_id: str,
@@ -357,6 +465,57 @@ async def get_growth_report(user_id: str, period_days: int = 30, db: Session = D
         },
         code="REPORT-200",
         message="성장 리포트 조회 성공",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+#  주차별 성장 리포트 목록 조회
+# ══════════════════════════════════════════════════════════════════
+
+@router.get("/reports/users/{user_id}/weekly")
+def get_weekly_reports(
+    user_id: str,
+    curriculum_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    GET /tutor/reports/users/{userId}/weekly
+    사용자의 주차별 성장 리포트 목록을 최신순으로 반환합니다.
+    curriculum_id 쿼리 파라미터로 필터 가능.
+    """
+    query = (
+        db.query(Feedback, TutorSession)
+        .join(TutorSession, Feedback.session_id == TutorSession.id)
+        .filter(
+            Feedback.employee_id == user_id,
+            Feedback.feedback_type == "growth_report",
+        )
+    )
+    if curriculum_id:
+        query = query.filter(TutorSession.curriculum_id == curriculum_id)
+
+    rows = query.order_by(Feedback.created_at.desc()).all()
+
+    reports = [
+        {
+            "reportId": f.id,
+            "weekTitle": s.module_title or "성장 리포트",
+            "curriculumId": s.curriculum_id,
+            "score": f.score,
+            "summary": f.summary,
+            "strengths": f.get_strengths(),
+            "weaknesses": f.get_weaknesses(),
+            "recommendations": f.get_recommendations(),
+            "detail": f.detail,
+            "createdAt": f.created_at.isoformat() if f.created_at else None,
+        }
+        for f, s in rows
+    ]
+
+    return ApiResponse.ok(
+        data=reports,
+        code="REPORT-200",
+        message=f"주차별 성장 리포트 {len(reports)}건 조회 완료",
     )
 
 

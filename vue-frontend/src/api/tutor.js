@@ -9,5 +9,15 @@ export const tutorApi = {
   },
   getFeedback(submissionId) {
     return api.get(`/tutor/feedback/${submissionId}`)
+  },
+  generateQuiz(body) {
+    return api.post('/tutor/quizzes/generate', body, { timeout: 60000 })
+  },
+  submitQuiz(quizId, body) {
+    return api.post(`/tutor/quizzes/${quizId}/submit`, body)
+  },
+  getWeeklyReports(userId, curriculumId) {
+    const params = curriculumId ? { curriculum_id: curriculumId } : {}
+    return api.get(`/tutor/reports/users/${userId}/weekly`, { params })
   }
 }

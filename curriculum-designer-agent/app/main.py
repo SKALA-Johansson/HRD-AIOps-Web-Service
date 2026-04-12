@@ -15,7 +15,7 @@ from app.config import settings
 from app.database import create_tables
 from app.routers.curriculums import router as curriculums_router
 from app.routers.standard import router as standard_router
-from app.services.kafka_service import consume_curriculum_events, stop_producer
+from app.services.kafka_service import consume_curriculum_events, consume_learning_logs, stop_producer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,6 +34,14 @@ async def lifespan(app: FastAPI):
     create_tables()
     logger.info("[DB] 테이블 초기화 완료")
 
+    from app.services.seeder import seed_standard_curricula
+    from app.database import SessionLocal
+    _seed_db = SessionLocal()
+    try:
+        seed_standard_curricula(_seed_db)
+    finally:
+        _seed_db.close()
+
     try:
         await eureka_client.init_async(
             eureka_server=settings.EUREKA_SERVER_URL,
@@ -47,17 +55,20 @@ async def lifespan(app: FastAPI):
 
     app_state = {}
     consumer_task = asyncio.create_task(consume_curriculum_events(app_state))
-    logger.info("[Kafka] Consumer 백그라운드 시작")
+    learning_consumer_task = asyncio.create_task(consume_learning_logs(app_state))
+    logger.info("[Kafka] Consumer 백그라운드 시작 (curriculum-events + learning-logs)")
 
     yield
 
     # ── Shutdown ──────────────────────────────────────────
     logger.info("[Shutdown] 서비스 종료 시작")
     consumer_task.cancel()
-    try:
-        await consumer_task
-    except asyncio.CancelledError:
-        pass
+    learning_consumer_task.cancel()
+    for task in [consumer_task, learning_consumer_task]:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await stop_producer()
     await eureka_client.stop_async()
     logger.info("[Shutdown] 종료 완료")
