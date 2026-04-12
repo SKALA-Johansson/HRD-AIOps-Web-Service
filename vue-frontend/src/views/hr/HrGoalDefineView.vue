@@ -60,7 +60,6 @@
 
       <p v-if="successMsg" class="success">{{ successMsg }}</p>
       <p v-if="err" class="error">{{ err }}</p>
-      <pre v-if="resultJson" class="pre">{{ resultJson }}</pre>
     </main>
   </div>
 </template>
@@ -77,7 +76,6 @@ const selectedFile = ref(null)
 const selectedName = ref('')
 const successMsg = ref('')
 const err = ref('')
-const resultJson = ref('')
 
 const form = reactive({
   name: '',
@@ -92,7 +90,6 @@ function clearFile() {
   if (fileInput.value) fileInput.value.value = ''
   successMsg.value = ''
   err.value = ''
-  resultJson.value = ''
 }
 
 function pickPdf(file) {
@@ -101,7 +98,6 @@ function pickPdf(file) {
   if (!ok) { err.value = 'PDF 파일만 업로드할 수 있습니다.'; return }
   err.value = ''
   successMsg.value = ''
-  resultJson.value = ''
   selectedFile.value = file
   selectedName.value = file.name
 }
@@ -115,7 +111,6 @@ async function runRegister() {
   loading.value = true
   err.value = ''
   successMsg.value = ''
-  resultJson.value = ''
 
   const fd = new FormData()
   fd.append('file', file)
@@ -127,7 +122,6 @@ async function runRegister() {
   try {
     const res = await profilesApi.register(fd)
     const data = res.data?.data ?? res.data
-    resultJson.value = JSON.stringify(data, null, 2)
     if (data?.curriculumRequested) {
       successMsg.value = '사원 등록이 완료되었습니다. 보유 역량을 반영해 커리큘럼 생성을 시작했습니다.'
     } else {
@@ -172,5 +166,4 @@ async function runRegister() {
 .form-input { width: 100%; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: 14px; font-size: 14px; }
 .success { color: var(--color-success); margin-bottom: 8px; font-size: 14px; }
 .error { color: var(--color-danger); margin-bottom: 8px; font-size: 14px; }
-.pre { margin-top: 12px; padding: 12px; background: var(--color-bg-tertiary); border-radius: var(--radius-md); font-size: 12px; overflow: auto; max-height: 280px; }
 </style>

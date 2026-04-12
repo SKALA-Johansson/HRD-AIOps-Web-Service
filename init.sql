@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS curriculums (
   total_weeks INT DEFAULT 12,
   status ENUM('generating', 'draft', 'approved', 'rejected', 'revised', 'active', 'completed', 'error') NOT NULL DEFAULT 'draft',
   revision_note TEXT NULL,
+  existing_skills TEXT NULL,
+  skill_analysis TEXT NULL,
   version INT DEFAULT 1,
   created_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6),
   updated_at DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),

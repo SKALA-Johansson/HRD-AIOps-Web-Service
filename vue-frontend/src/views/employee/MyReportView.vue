@@ -43,8 +43,19 @@ const loading = ref(false)
 const error = ref('')
 const report = ref(null)
 
+function sanitizeMetrics(metricsObj) {
+  const src = metricsObj && typeof metricsObj === 'object' ? metricsObj : {}
+  const out = {}
+  Object.entries(src).forEach(([key, value]) => {
+    const lower = String(key).toLowerCase()
+    if (lower.includes('api') || lower.includes('endpoint') || lower.includes('url')) return
+    out[key] = value
+  })
+  return out
+}
+
 const metrics = computed(() =>
-  report.value?.achievementMetrics ? JSON.stringify(report.value.achievementMetrics, null, 2) : ''
+  report.value?.achievementMetrics ? JSON.stringify(sanitizeMetrics(report.value.achievementMetrics), null, 2) : ''
 )
 
 async function load() {

@@ -9,6 +9,7 @@ import lombok.*;
 @Builder
 public class UserSummaryDto {
     private String userId;
+    private String username;
     private String name;
     private String department;
     private Integer completionRate;

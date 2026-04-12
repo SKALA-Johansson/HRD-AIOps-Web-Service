@@ -12,6 +12,7 @@ import java.util.Map;
 @Builder
 public class GrowthReportDto {
     private String userId;
+    private String username;
     private List<String> strengths;
     private List<String> weaknesses;
     private Map<String, Integer> achievementMetrics;

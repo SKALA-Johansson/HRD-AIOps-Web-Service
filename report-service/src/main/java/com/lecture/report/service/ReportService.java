@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -47,10 +48,14 @@ public class ReportService {
             List<UserSummaryDto> result = new ArrayList<>();
             for (Map emp : employees) {
                 String userId = String.valueOf(emp.get("userId"));
+                String username = emp.get("username") != null ? String.valueOf(emp.get("username")) : "";
                 String name = String.valueOf(emp.getOrDefault("name", ""));
                 String department = emp.get("department") != null ? String.valueOf(emp.get("department")) : "";
 
                 GrowthReport report = reportMap.get(userId);
+                if (report == null && username != null && !username.isBlank()) {
+                    report = reportMap.get(username);
+                }
                 Integer avgScore = null;
                 if (report != null && report.getAchievementMetrics() != null) {
                     avgScore = report.getAchievementMetrics().get("averageScore");
@@ -58,6 +63,7 @@ public class ReportService {
 
                 result.add(UserSummaryDto.builder()
                         .userId(userId)
+                        .username(username)
                         .name(name)
                         .department(department)
                         .completionRate(avgScore)
@@ -73,10 +79,18 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public GrowthReportDto getUserReport(String userId) {
-        return growthReportRepository.findByUserId(userId)
-                .map(this::toDto)
+        String username = resolveUsernameByUserId(userId);
+        Optional<GrowthReport> byUserId = growthReportRepository.findByUserId(userId);
+        Optional<GrowthReport> byUsername = (username == null || username.isBlank())
+                ? Optional.empty()
+                : growthReportRepository.findByUserId(username);
+
+        return byUserId
+                .or(() -> byUsername)
+                .map(report -> toDto(report, username == null || username.isBlank() ? report.getUserId() : username))
                 .orElseGet(() -> GrowthReportDto.builder()
                         .userId(userId)
+                        .username(username)
                         .strengths(List.of())
                         .weaknesses(List.of())
                         .achievementMetrics(Map.of())
@@ -93,12 +107,48 @@ public class ReportService {
                 .build();
     }
 
-    private GrowthReportDto toDto(GrowthReport growthReport) {
+    private GrowthReportDto toDto(GrowthReport growthReport, String username) {
         return GrowthReportDto.builder()
                 .userId(growthReport.getUserId())
+                .username(username)
                 .strengths(growthReport.getStrengths())
                 .weaknesses(growthReport.getWeaknesses())
                 .achievementMetrics(growthReport.getAchievementMetrics())
                 .build();
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private String resolveUsernameByUserId(String userId) {
+        try {
+            Map response = restTemplate.getForObject(
+                    authServerUrl + "/api/v1/profiles/employees", Map.class);
+            if (response == null) {
+                return userId;
+            }
+
+            Object dataObj = response.get("data");
+            if (!(dataObj instanceof List)) {
+                return userId;
+            }
+
+            List<Map> employees = (List<Map>) dataObj;
+            for (Map emp : employees) {
+                String candidateUserId = String.valueOf(emp.getOrDefault("userId", ""));
+                if (!userId.equals(candidateUserId)) {
+                    continue;
+                }
+                Object usernameObj = emp.get("username");
+                if (usernameObj != null) {
+                    String username = String.valueOf(usernameObj).trim();
+                    if (!username.isBlank()) {
+                        return username;
+                    }
+                }
+                break;
+            }
+        } catch (Exception e) {
+            log.warn("username 조회 실패(userId={}): {}", userId, e.getMessage());
+        }
+        return userId;
     }
 }

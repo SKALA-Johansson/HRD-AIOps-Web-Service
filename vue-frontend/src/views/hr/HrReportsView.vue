@@ -12,14 +12,14 @@
               {{ listLoading ? '불러오는 중…' : '새로고침' }}
             </button>
           </div>
-          <input v-model="query" class="search" placeholder="이름 또는 ID 검색" />
+          <input v-model="query" class="search" placeholder="이름 또는 사원번호 검색" />
           <p v-if="listError" class="error">{{ listError }}</p>
           <ul v-if="filteredUsers.length" class="user-list">
             <li v-for="u in filteredUsers" :key="u.userId">
               <button type="button" class="user-card" :class="{ selected: selectedUserId === u.userId }" @click="selectUser(u)">
                 <div class="user-top">
                   <span class="user-name">{{ u.name || '신입' }}</span>
-                  <span class="pill">ID {{ u.userId }}</span>
+                  <span class="pill">사번 {{ u.username || '-' }}</span>
                 </div>
                 <div class="user-meta">
                   <span v-if="u.completionRate != null" class="meta">진행률 {{ u.completionRate }}%</span>
@@ -40,7 +40,7 @@
             <div v-if="loading" class="muted">불러오는 중…</div>
             <p v-else-if="error" class="error">{{ error }}</p>
             <div v-else-if="report" class="card">
-              <p class="meta">userId: {{ report.userId }}</p>
+              <p class="meta">사원번호: {{ selectedUsername || report.username || '-' }}</p>
               <h2 class="sub">강점</h2>
               <ul>
                 <li v-for="(s, i) in report.strengths || []" :key="'s' + i">{{ s }}</li>
@@ -74,15 +74,33 @@ const loading = ref(false)
 const error = ref('')
 const report = ref(null)
 
+function sanitizeMetrics(metricsObj) {
+  const src = metricsObj && typeof metricsObj === 'object' ? metricsObj : {}
+  const out = {}
+  Object.entries(src).forEach(([key, value]) => {
+    const lower = String(key).toLowerCase()
+    if (lower.includes('api') || lower.includes('endpoint') || lower.includes('url')) return
+    out[key] = value
+  })
+  return out
+}
+
 const metrics = computed(() =>
-  report.value?.achievementMetrics ? JSON.stringify(report.value.achievementMetrics, null, 2) : ''
+  report.value?.achievementMetrics ? JSON.stringify(sanitizeMetrics(report.value.achievementMetrics), null, 2) : ''
 )
+const selectedUsername = computed(() => {
+  const selected = users.value.find((u) => String(u.userId) === String(selectedUserId.value))
+  return selected?.username || ''
+})
 
 const filteredUsers = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return users.value
   return users.value.filter(
-    (u) => String(u.userId).includes(q) || String(u.name || '').toLowerCase().includes(q)
+    (u) =>
+      String(u.username || '').toLowerCase().includes(q) ||
+      String(u.name || '').toLowerCase().includes(q) ||
+      String(u.userId || '').includes(q)
   )
 })
 

@@ -12,7 +12,7 @@
           <thead>
             <tr>
               <th>이름</th>
-              <th>userId</th>
+              <th>사원번호</th>
               <th>진행률</th>
               <th>상태</th>
               <th>최근 모듈</th>
@@ -21,7 +21,7 @@
           <tbody>
             <tr v-for="row in rows" :key="row.userId">
               <td>{{ row.name }}</td>
-              <td>{{ row.userId }}</td>
+              <td>{{ row.username || row.userId || '—' }}</td>
               <td>{{ row.completionRate != null ? row.completionRate + '%' : '—' }}</td>
               <td>
                 <span class="badge" :class="row.status === '지연' || row.status === 'DELAYED' ? 'warn' : 'ok'">

@@ -46,7 +46,7 @@ async function fetchGuide() {
       question: '이 신입사원의 학습 현황을 분석하고 멘토링 가이드를 작성해주세요.'
     })
     const d = res.data?.data ?? res.data
-    guide.value = d?.answer ?? d?.response ?? JSON.stringify(d, null, 2)
+    guide.value = d?.answer ?? d?.response ?? '가이드가 생성되었습니다.'
   } catch (e) {
     error.value = 'AI 튜터링 가이드를 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.'
   } finally {
