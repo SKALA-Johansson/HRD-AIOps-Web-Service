@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── REST API Request ───────────────────────────────────────────────
@@ -8,6 +8,12 @@ from pydantic import BaseModel
 class CurriculumGenerateRequest(BaseModel):
     """POST /curriculums/generate - api.md §8"""
     goalId: str
+    # 맞춤 커리큘럼 생성에 필요한 직원 정보 (있으면 정석 기반 개인화, 없으면 자유 생성)
+    department: Optional[str] = None
+    role: Optional[str] = None
+    career_level: Optional[str] = "junior"
+    employee_name: Optional[str] = None
+    existing_skills: list[str] = Field(default_factory=list)      # 직원이 이미 보유한 스킬 목록
 
 
 class CurriculumUpdateRequest(BaseModel):
@@ -31,13 +37,29 @@ class ModuleSummary(BaseModel):
     title: str
 
 
+class SkillDecision(BaseModel):
+    module_title: str
+    action: str   # INCLUDE | EXCLUDE | ADVANCED
+    reason: str
+
+
+class SkillAnalysis(BaseModel):
+    detected_skills: list[str] = Field(default_factory=list)
+    decisions: list[SkillDecision] = Field(default_factory=list)
+
+
 class CurriculumDetailResponse(BaseModel):
     """GET /curriculums/{curriculumId} 응답 - api.md §9"""
     curriculumId: str
     goalId: str
+    employeeName: Optional[str] = None
+    employeeId: Optional[str] = None
+    department: Optional[str] = None
     title: str
     status: str
-    modules: list[ModuleSummary] = []
+    modules: list[ModuleSummary] = Field(default_factory=list)
+    existingSkills: list[str] = Field(default_factory=list)
+    skillAnalysis: Optional[SkillAnalysis] = None
 
 
 # ── 내부 전체 응답 (서비스 내부용) ────────────────────────────────────
@@ -72,7 +94,7 @@ class CurriculumResponse(BaseModel):
     status: str
     revision_note: Optional[str] = None
     version: int
-    modules: list[ModuleResponse] = []
+    modules: list[ModuleResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

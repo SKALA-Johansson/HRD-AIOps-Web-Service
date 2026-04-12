@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     QDRANT_PORT: int = 6333
     QDRANT_COLLECTION: str = "curriculum_rag"
 
+    # Auth Server (사원 자동 회원가입용)
+    AUTH_SERVER_URL: str = "http://auth-server:9000"
+    # Content Service (등록된 교육 콘텐츠 조회용)
+    CONTENT_SERVICE_URL: str = "http://content-service:9007"
+
     class Config:
         env_file = ".env"
 

@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from app.config import settings
 from app.database import create_tables
 from app.routers.curriculums import router as curriculums_router
+from app.routers.standard import router as standard_router
 from app.services.kafka_service import consume_curriculum_events, stop_producer
 
 logging.basicConfig(
@@ -28,6 +29,8 @@ async def lifespan(app: FastAPI):
     # ── Startup ──────────────────────────────────────────
     logger.info(f"[Startup] {settings.SERVICE_NAME} 시작 (port={settings.SERVICE_PORT})")
 
+    # standard_curriculum 모델도 import 해야 Base.metadata에 포함됨
+    import app.models.standard_curriculum  # noqa: F401
     create_tables()
     logger.info("[DB] 테이블 초기화 완료")
 
@@ -67,6 +70,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(standard_router)   # /curriculums/standard 먼저 등록 (path 충돌 방지)
 app.include_router(curriculums_router)
 
 

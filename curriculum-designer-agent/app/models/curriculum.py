@@ -26,11 +26,25 @@ class Curriculum(Base):
         nullable=False,
     )
     revision_note = Column(Text, nullable=True)
+    existing_skills = Column(Text, nullable=True)   # JSON list — PDF에서 추출한 역량
+    skill_analysis = Column(Text, nullable=True)    # JSON — AI 모듈 포함/제외 판단 결과
     version = Column(Integer, default=1)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     modules = relationship("Module", back_populates="curriculum", cascade="all, delete-orphan")
+
+    def get_existing_skills(self) -> list:
+        return json.loads(self.existing_skills) if self.existing_skills else []
+
+    def set_existing_skills(self, skills: list):
+        self.existing_skills = json.dumps(skills, ensure_ascii=False)
+
+    def get_skill_analysis(self) -> dict:
+        return json.loads(self.skill_analysis) if self.skill_analysis else {}
+
+    def set_skill_analysis(self, analysis: dict):
+        self.skill_analysis = json.dumps(analysis, ensure_ascii=False)
 
 
 class Module(Base):
