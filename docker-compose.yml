@@ -22,6 +22,13 @@ x-openai-env: &openai-env
   OPENAI_MODEL: gpt-4o-mini
   OPENAI_EMBEDDING_MODEL: text-embedding-3-small
 
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 networks:
   msa-network:
     driver: bridge
@@ -55,6 +62,7 @@ services:
       interval: 20s
       timeout: 10s
       retries: 5
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -82,6 +90,7 @@ services:
       interval: 20s
       timeout: 10s
       retries: 5
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -106,6 +115,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -140,6 +150,7 @@ services:
       timeout: 5s
       retries: 20
       start_period: 60s
+    <<: *default-logging
     restart: unless-stopped
 
   # Kafka 토픽 초기 생성
@@ -158,6 +169,7 @@ services:
       "
     networks:
       - msa-network
+    <<: *default-logging
 
   # ──────────────────────────────────────────────────────────────────
   #  [5] Qdrant  :6333
@@ -172,6 +184,7 @@ services:
       - qdrant-data:/qdrant/storage
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -192,6 +205,7 @@ services:
       - "--web.enable-lifecycle"
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -213,6 +227,7 @@ services:
       - prometheus
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -234,6 +249,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # Goal Setter Service  :9001
@@ -251,6 +267,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # Curriculum Service  :9002
@@ -268,6 +285,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # Approval Service  :9003
@@ -285,6 +303,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # Learning Service  :9004
@@ -302,6 +321,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # Tutor Service  :9005
@@ -319,6 +339,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # Report Service  :9006
@@ -341,6 +362,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # Content Service  :9007
@@ -362,6 +384,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -397,6 +420,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -430,6 +454,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -468,6 +493,7 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped
 
   # ──────────────────────────────────────────────────────────────────
@@ -493,4 +519,5 @@ services:
         condition: service_healthy
     networks:
       - msa-network
+    <<: *default-logging
     restart: unless-stopped

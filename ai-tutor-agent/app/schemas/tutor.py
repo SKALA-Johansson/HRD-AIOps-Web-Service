@@ -30,6 +30,8 @@ class QuizGradingRequest(BaseModel):
 class AssignmentGradingRequest(BaseModel):
     user_id: Optional[str] = "0"
     module_id: Optional[str] = None
+    curriculum_id: Optional[str] = None
+    week_number: Optional[int] = None
     assignment_title: str
     assignment_description: str
     student_submission: str

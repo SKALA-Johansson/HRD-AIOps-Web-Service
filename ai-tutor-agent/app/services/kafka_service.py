@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 _producer: AIOKafkaProducer | None = None
 
 
+async def _reset_producer():
+    global _producer
+    if _producer is not None:
+        try:
+            await _producer.stop()
+        except Exception:
+            pass
+        _producer = None
+
+
 async def get_producer() -> AIOKafkaProducer:
     global _producer
     if _producer is None:
@@ -27,15 +37,11 @@ async def get_producer() -> AIOKafkaProducer:
 
 
 async def stop_producer():
-    global _producer
-    if _producer:
-        await _producer.stop()
-        _producer = None
+    await _reset_producer()
 
 
 async def publish_event(event_type: str, payload: dict):
-    """learning-logs 토픽으로 이벤트 발행"""
-    producer = await get_producer()
+    """learning-logs 토픽으로 이벤트 발행 (실패 시 재연결 후 재시도)"""
     event = {
         "event_type": event_type,
         "event_id": payload.get("session_id", payload.get("employee_id", "")),
@@ -43,8 +49,19 @@ async def publish_event(event_type: str, payload: dict):
         "source": settings.SERVICE_NAME,
         "payload": payload,
     }
-    await producer.send(settings.KAFKA_PRODUCE_TOPIC, value=event)
-    logger.info(f"[Kafka] {event_type} 발행: {event['event_id']}")
+    last_exc = None
+    for attempt in range(3):
+        try:
+            producer = await get_producer()
+            await producer.send(settings.KAFKA_PRODUCE_TOPIC, value=event)
+            logger.info(f"[Kafka] {event_type} 발행: {event['event_id']}")
+            return
+        except Exception as e:
+            last_exc = e
+            logger.warning(f"[Kafka] 발행 실패 (시도 {attempt + 1}/3): {e}")
+            await _reset_producer()
+            await asyncio.sleep(2 ** attempt)
+    raise Exception(f"[Kafka] 발행 최종 실패 ({event_type}): {last_exc}")
 
 
 async def publish_activity_logged(
@@ -221,8 +238,9 @@ async def consume_learning_logs(app_state: dict):
                     f"type={payload.get('anomaly_type')} severity={payload.get('severity')}"
                 )
 
-            # ── Learning.QuizCompleted ────────────────────────────────
-            elif event_type == "Learning.QuizCompleted":
+            # ── Learning.QuizCompleted / Learning.AssignmentCompleted ──
+            elif event_type in ("Learning.QuizCompleted", "Learning.AssignmentCompleted"):
+                is_assignment = event_type == "Learning.AssignmentCompleted"
                 user_id = payload.get("user_id")
                 module_id = payload.get("module_id")
                 curriculum_id = payload.get("curriculum_id")
@@ -230,20 +248,21 @@ async def consume_learning_logs(app_state: dict):
                 score = payload.get("score") or 0
                 max_score = payload.get("max_score") or 100
                 passed = payload.get("passed") or False
+                activity_label = "과제" if is_assignment else "퀴즈"
+                feedback_type = "assignment_hr_report" if is_assignment else "quiz_hr_report"
 
                 logger.info(
-                    f"[QuizCompleted] user={user_id}, module={module_id}, "
+                    f"[{event_type}] user={user_id}, module={module_id}, "
                     f"score={score}/{max_score}, passed={passed} → HR 리포트 생성"
                 )
 
                 db = SessionLocal()
                 try:
-                    # 최근 퀴즈 피드백 조회 (컨텍스트용)
                     recent_feedbacks = (
                         db.query(Feedback)
                         .filter(
                             Feedback.employee_id == user_id,
-                            Feedback.feedback_type == "quiz_grading",
+                            Feedback.feedback_type.in_(["quiz_grading", "assignment_grading"]),
                         )
                         .order_by(Feedback.created_at.desc())
                         .limit(10)
@@ -257,7 +276,7 @@ async def consume_learning_logs(app_state: dict):
                         total_learning_hours=0,
                         average_score=score,
                         recent_activities=[{
-                            "activity_type": "quiz",
+                            "activity_type": activity_label,
                             "module_id": module_id,
                             "score": score,
                             "duration_minutes": None,
@@ -265,7 +284,7 @@ async def consume_learning_logs(app_state: dict):
                         recent_feedback=[
                             {"feedback_type": f.feedback_type, "score": f.score, "passed": f.passed}
                             for f in recent_feedbacks
-                        ] + [{"feedback_type": "quiz_grading", "score": score, "passed": passed}],
+                        ] + [{"feedback_type": activity_label, "score": score, "passed": passed}],
                     )
 
                     report_session = TutorSession(
@@ -273,8 +292,8 @@ async def consume_learning_logs(app_state: dict):
                         employee_name=f"User_{user_id}",
                         module_id=module_id,
                         curriculum_id=curriculum_id,
-                        module_title=f"{week_number}주차 퀴즈" if week_number else "퀴즈",
-                        session_type="quiz",
+                        module_title=f"{week_number}주차 {activity_label}" if week_number else activity_label,
+                        session_type="assignment" if is_assignment else "quiz",
                         status="completed",
                     )
                     report_session.set_messages([])
@@ -284,7 +303,7 @@ async def consume_learning_logs(app_state: dict):
                     hr_feedback = Feedback(
                         session_id=report_session.id,
                         employee_id=user_id,
-                        feedback_type="quiz_hr_report",
+                        feedback_type=feedback_type,
                         score=score,
                         max_score=max_score,
                         passed=passed,
@@ -301,10 +320,10 @@ async def consume_learning_logs(app_state: dict):
                     db.commit()
 
                     logger.info(
-                        f"[QuizCompleted] HR 리포트 저장 완료: feedback_id={hr_feedback.id}"
+                        f"[{event_type}] HR 리포트 저장 완료: feedback_id={hr_feedback.id}"
                     )
                 except Exception as e:
-                    logger.error(f"[QuizCompleted] HR 리포트 생성 실패: {e}", exc_info=True)
+                    logger.error(f"[{event_type}] HR 리포트 생성 실패: {e}", exc_info=True)
                 finally:
                     db.close()
 

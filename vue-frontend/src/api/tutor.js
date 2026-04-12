@@ -22,6 +22,6 @@ export const tutorApi = {
   },
   getHrQuizReports(userId, curriculumId) {
     const params = curriculumId ? { curriculum_id: curriculumId } : {}
-    return api.get(`/tutor/reports/hr/users/${userId}/quiz`, { params })
+    return api.get(`/tutor/reports/hr/users/${userId}`, { params })
   },
 }

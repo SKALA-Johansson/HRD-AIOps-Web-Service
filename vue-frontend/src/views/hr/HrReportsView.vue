@@ -8,7 +8,7 @@
         <!-- 왼쪽: 사원 목록 -->
         <section class="list-panel" aria-label="수강 중인 신입사원 목록">
           <div class="list-head">
-            <h2 class="panel-title">수강 중인 신입사원</h2>
+            <h2 class="panel-title">신입사원 목록</h2>
             <button type="button" class="btn btn-outline btn-sm" :disabled="listLoading" @click="loadUsers">
               {{ listLoading ? '불러오는 중…' : '새로고침' }}
             </button>
@@ -41,11 +41,11 @@
         <!-- 오른쪽: 퀴즈 리포트 목록 -->
         <section class="detail-panel" aria-label="선택한 신입사원 퀴즈 리포트">
           <template v-if="!selectedUserId">
-            <p class="placeholder">왼쪽에서 신입사원을 선택하면 퀴즈 리포트가 표시됩니다.</p>
+            <p class="placeholder">왼쪽에서 신입사원을 선택하면 학습 리포트가 표시됩니다.</p>
           </template>
           <template v-else>
             <div class="detail-head">
-              <h2 class="panel-title">{{ selectedUserName }} 퀴즈 리포트</h2>
+              <h2 class="panel-title">{{ selectedUserName }} 학습 리포트</h2>
               <button type="button" class="btn btn-outline btn-sm" :disabled="loading" @click="loadReports(selectedUserId)">
                 {{ loading ? '불러오는 중…' : '새로고침' }}
               </button>
@@ -66,7 +66,11 @@
                   <div class="report-header-main">
                     <div class="report-title-row">
                       <span class="module-badge">{{ rpt.moduleTitle }}</span>
+                      <span class="type-badge" :class="rpt.reportType">
+                        {{ rpt.reportType === 'assignment' ? '과제' : rpt.reportType === 'growth' ? '성장리포트' : '퀴즈' }}
+                      </span>
                       <span
+                        v-if="rpt.reportType !== 'growth'"
                         class="pass-badge"
                         :class="rpt.passed ? 'pass' : 'fail'"
                       >{{ rpt.passed ? '합격' : '불합격' }}</span>
@@ -150,7 +154,7 @@ async function loadUsers() {
   listLoading.value = true
   listError.value = ''
   try {
-    const res = await reportsApi.users({ status: 'IN_PROGRESS' })
+    const res = await reportsApi.users({})
     const d = res.data?.data ?? res.data
     users.value = Array.isArray(d) ? d : Array.isArray(d?.content) ? d.content : []
   } catch {
@@ -278,6 +282,10 @@ onMounted(loadUsers)
 }
 .pass-badge.pass { background: var(--color-success-light); color: #065f46; }
 .pass-badge.fail { background: #fff3f3; color: var(--color-danger); }
+.type-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--color-bg-tertiary); color: var(--color-text-secondary); }
+.type-badge.assignment { background: #eff6ff; color: #1d4ed8; }
+.type-badge.quiz { background: #f0fdf4; color: #15803d; }
+.type-badge.growth { background: #fefce8; color: #a16207; }
 .score-chip { font-size: 13px; color: var(--color-text-secondary); }
 .report-summary { font-size: 13px; color: var(--color-text-secondary); margin: 0; line-height: 1.5; }
 .toggle-icon { font-size: 12px; color: var(--color-text-muted); flex-shrink: 0; margin-top: 4px; }

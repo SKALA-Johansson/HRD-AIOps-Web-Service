@@ -7,6 +7,7 @@ AI Tutor Agent (RAG 기반)
 """
 import json
 import logging
+import random
 from datetime import datetime
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -221,7 +222,15 @@ class AITutorAgent:
     "id": 1,
     "question": "문제 내용",
     "options": ["A. 보기1", "B. 보기2", "C. 보기3", "D. 보기4"],
-    "correct_answer": "A",
+    "correct_answer": "B",
+    "explanation": "정답 해설",
+    "points": 25
+  }},
+  {{
+    "id": 2,
+    "question": "문제 내용",
+    "options": ["A. 보기1", "B. 보기2", "C. 보기3", "D. 보기4"],
+    "correct_answer": "D",
     "explanation": "정답 해설",
     "points": 25
   }}
@@ -230,6 +239,7 @@ class AITutorAgent:
 규칙:
 - 객관식 4지 선다 (A/B/C/D)
 - correct_answer는 반드시 "A", "B", "C", "D" 중 하나
+- **정답이 특정 보기에 편중되지 않도록 A, B, C, D를 고르게 분배하세요. 모든 문제의 정답이 같은 보기여서는 안 됩니다.**
 - 학습 목표를 직접 검증하는 문제
 - {num_questions}문제, 총 합계 100점 (각 {100 // num_questions}점)
 """
@@ -247,7 +257,37 @@ class AITutorAgent:
             content_str = content_str.split("```")[1].split("```")[0].strip()
 
         questions = json.loads(content_str)
-        return questions if isinstance(questions, list) else []
+        if not isinstance(questions, list):
+            return []
+
+        labels = ["A", "B", "C", "D"]
+        for q in questions:
+            options = q.get("options", [])
+            correct = str(q.get("correct_answer", "A")).strip().upper()
+
+            # 현재 정답 텍스트 추출 (예: "A. 내용" → "내용")
+            correct_idx = labels.index(correct) if correct in labels else 0
+            if correct_idx < len(options):
+                correct_text = options[correct_idx]
+            else:
+                correct_text = options[0] if options else ""
+
+            # 보기 순서를 무작위로 섞고 레이블(A/B/C/D) 재부여
+            shuffled = options[:]
+            random.shuffle(shuffled)
+            relabeled = []
+            new_correct = correct
+            for i, opt in enumerate(shuffled):
+                # 기존 레이블 제거 후 새 레이블 붙이기 (예: "B. 내용" → "A. 내용")
+                text = opt[3:] if len(opt) > 2 and opt[1] == '.' else opt
+                relabeled.append(f"{labels[i]}. {text.lstrip()}")
+                if opt == correct_text:
+                    new_correct = labels[i]
+
+            q["options"] = relabeled
+            q["correct_answer"] = new_correct
+
+        return questions
 
     async def grade_quiz_batch(
         self,

@@ -266,7 +266,7 @@ async def consume_learning_logs(app_state: dict):
             event_type = event.get("event_type")
             payload = event.get("payload", {})
 
-            if event_type != "Learning.QuizCompleted":
+            if event_type not in ("Learning.QuizCompleted", "Learning.AssignmentCompleted"):
                 continue
 
             user_id = payload.get("user_id")

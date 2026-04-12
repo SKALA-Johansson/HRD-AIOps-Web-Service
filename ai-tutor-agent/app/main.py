@@ -43,8 +43,20 @@ async def lifespan(app: FastAPI):
         logger.warning(f"[Eureka] 등록 실패 (무시하고 계속): {e}")
 
     app_state = {}
-    consumer_task = asyncio.create_task(consume_learning_logs(app_state))
-    logger.info("[Kafka] Consumer 백그라운드 시작")
+
+    async def consumer_with_restart():
+        """Consumer가 죽으면 자동으로 재시작"""
+        while True:
+            try:
+                await consume_learning_logs(app_state)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"[Kafka] Consumer 비정상 종료, 5초 후 재시작: {e}")
+                await asyncio.sleep(5)
+
+    consumer_task = asyncio.create_task(consumer_with_restart())
+    logger.info("[Kafka] Consumer 백그라운드 시작 (자동 재시작 활성)")
 
     yield
 

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
@@ -58,6 +59,8 @@ async def _run_grading(
     user_id: str,
     module_id: str | None,
     completion_type: str,
+    curriculum_id: str | None = None,
+    week_number: int | None = None,
 ):
     """백그라운드 채점 태스크"""
     from app.database import SessionLocal
@@ -84,14 +87,19 @@ async def _run_grading(
         feedback.set_recommendations(result.get("recommendations", []))
         db.commit()
 
-        await publish_learning_completed(
-            user_id=user_id,
-            module_id=module_id,
-            completion_type=completion_type,
-            score=feedback.score,
-            max_score=feedback.max_score,
-            passed=feedback.passed,
-        )
+        try:
+            await publish_learning_completed(
+                user_id=user_id,
+                module_id=module_id,
+                completion_type=completion_type,
+                score=feedback.score,
+                max_score=feedback.max_score,
+                passed=feedback.passed,
+                curriculum_id=curriculum_id,
+                week_number=week_number,
+            )
+        except Exception as e:
+            logger.warning(f"[Kafka] 과제 완료 이벤트 발행 실패 (무시): {e}")
     finally:
         db.close()
 
@@ -212,6 +220,8 @@ async def grade_assignment_async(
         request.user_id or "0",
         request.module_id,
         "ASSIGNMENT",
+        request.curriculum_id,
+        request.week_number,
     )
 
     return ApiResponse.ok(
@@ -303,16 +313,19 @@ async def submit_quiz(
     db.add(feedback)
     db.commit()
 
-    await publish_learning_completed(
-        user_id=request.user_id or "0",
-        module_id=request.module_id,
-        completion_type="QUIZ",
-        score=result.get("total_score"),
-        max_score=result.get("max_score"),
-        passed=result.get("passed"),
-        curriculum_id=request.curriculum_id,
-        week_number=request.week_number,
-    )
+    try:
+        await publish_learning_completed(
+            user_id=request.user_id or "0",
+            module_id=request.module_id,
+            completion_type="QUIZ",
+            score=result.get("total_score"),
+            max_score=result.get("max_score"),
+            passed=result.get("passed"),
+            curriculum_id=request.curriculum_id,
+            week_number=request.week_number,
+        )
+    except Exception as e:
+        logger.warning(f"[Kafka] 퀴즈 완료 이벤트 발행 실패 (무시): {e}")
 
     return ApiResponse.ok(
         data={
@@ -525,22 +538,24 @@ def get_weekly_reports(
 #  HR용 퀴즈 리포트 목록 조회
 # ══════════════════════════════════════════════════════════════════
 
-@router.get("/reports/hr/users/{user_id}/quiz")
-def get_hr_quiz_reports(
+@router.get("/reports/hr/users/{user_id}")
+def get_hr_reports(
     user_id: str,
     curriculum_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """
-    GET /tutor/reports/hr/users/{userId}/quiz
-    HR가 특정 사원의 퀴즈별 AI 리포트를 최신순으로 조회합니다.
+    GET /tutor/reports/hr/users/{userId}
+    HR가 특정 사원의 퀴즈·과제 AI 리포트를 최신순으로 조회합니다.
     """
+    HR_REPORT_TYPES = ["quiz_hr_report", "assignment_hr_report", "growth_report"]
+
     query = (
         db.query(Feedback, TutorSession)
         .join(TutorSession, Feedback.session_id == TutorSession.id)
         .filter(
             Feedback.employee_id == user_id,
-            Feedback.feedback_type == "quiz_hr_report",
+            Feedback.feedback_type.in_(HR_REPORT_TYPES),
         )
     )
     if curriculum_id:
@@ -548,10 +563,22 @@ def get_hr_quiz_reports(
 
     rows = query.order_by(Feedback.created_at.desc()).all()
 
+    TYPE_MAP = {
+        "assignment_hr_report": "assignment",
+        "quiz_hr_report": "quiz",
+        "growth_report": "growth",
+    }
+    DEFAULT_TITLE_MAP = {
+        "assignment_hr_report": "과제",
+        "quiz_hr_report": "퀴즈",
+        "growth_report": "주차 성장 리포트",
+    }
+
     reports = [
         {
             "reportId": f.id,
-            "moduleTitle": s.module_title or "퀴즈",
+            "reportType": TYPE_MAP.get(f.feedback_type, "quiz"),
+            "moduleTitle": s.module_title or DEFAULT_TITLE_MAP.get(f.feedback_type, "리포트"),
             "moduleId": s.module_id,
             "curriculumId": s.curriculum_id,
             "score": f.score,
@@ -570,7 +597,7 @@ def get_hr_quiz_reports(
     return ApiResponse.ok(
         data=reports,
         code="REPORT-200",
-        message=f"HR 퀴즈 리포트 {len(reports)}건 조회 완료",
+        message=f"HR 리포트 {len(reports)}건 조회 완료",
     )
 
 
