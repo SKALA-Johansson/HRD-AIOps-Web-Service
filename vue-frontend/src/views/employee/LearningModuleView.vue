@@ -71,14 +71,6 @@
             >
               {{ quizLoading ? '생성 중…' : '퀴즈 시작' }}
             </button>
-            <button
-              v-if="quizState === 'done'"
-              type="button"
-              class="btn btn-outline btn-sm"
-              @click="resetQuiz"
-            >
-              다시 풀기
-            </button>
           </div>
 
           <!-- 로딩 -->

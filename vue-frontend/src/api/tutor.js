@@ -19,5 +19,9 @@ export const tutorApi = {
   getWeeklyReports(userId, curriculumId) {
     const params = curriculumId ? { curriculum_id: curriculumId } : {}
     return api.get(`/tutor/reports/users/${userId}/weekly`, { params })
-  }
+  },
+  getHrQuizReports(userId, curriculumId) {
+    const params = curriculumId ? { curriculum_id: curriculumId } : {}
+    return api.get(`/tutor/reports/hr/users/${userId}/quiz`, { params })
+  },
 }

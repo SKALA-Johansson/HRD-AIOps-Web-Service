@@ -114,8 +114,10 @@ async def publish_learning_completed(
 async def consume_learning_logs(app_state: dict):
     """
     learning-logs 토픽 이벤트 처리:
-    - Learning.ActivityLogged → DB 저장 및 이상 징후 검사
-    - Learning.AnomalyDetected → 이상 징후 처리
+    - Learning.ActivityLogged    → DB 저장 및 이상 징후 검사
+    - Learning.AnomalyDetected   → 이상 징후 로그
+    - Learning.QuizCompleted     → HR용 퀴즈 리포트 즉시 생성
+    - Learning.WeekCompleted     → 주차 성장 리포트 생성
     """
     from app.database import SessionLocal
     from app.models.tutor import LearningActivity, Feedback, TutorSession
@@ -214,11 +216,97 @@ async def consume_learning_logs(app_state: dict):
 
             # ── Learning.AnomalyDetected ─────────────────────────────
             elif event_type == "Learning.AnomalyDetected":
-                # 외부 시스템(모니터링/알림)에서 수신한 이상 징후 로그만 기록
                 logger.warning(
                     f"[Anomaly Received] employee={payload.get('employee_id')} "
                     f"type={payload.get('anomaly_type')} severity={payload.get('severity')}"
                 )
+
+            # ── Learning.QuizCompleted ────────────────────────────────
+            elif event_type == "Learning.QuizCompleted":
+                user_id = payload.get("user_id")
+                module_id = payload.get("module_id")
+                curriculum_id = payload.get("curriculum_id")
+                week_number = payload.get("week_number")
+                score = payload.get("score") or 0
+                max_score = payload.get("max_score") or 100
+                passed = payload.get("passed") or False
+
+                logger.info(
+                    f"[QuizCompleted] user={user_id}, module={module_id}, "
+                    f"score={score}/{max_score}, passed={passed} → HR 리포트 생성"
+                )
+
+                db = SessionLocal()
+                try:
+                    # 최근 퀴즈 피드백 조회 (컨텍스트용)
+                    recent_feedbacks = (
+                        db.query(Feedback)
+                        .filter(
+                            Feedback.employee_id == user_id,
+                            Feedback.feedback_type == "quiz_grading",
+                        )
+                        .order_by(Feedback.created_at.desc())
+                        .limit(10)
+                        .all()
+                    )
+
+                    report_data = await ai_tutor_agent.generate_growth_report(
+                        employee_name=f"User_{user_id}",
+                        period_days=7,
+                        total_sessions=len(recent_feedbacks) + 1,
+                        total_learning_hours=0,
+                        average_score=score,
+                        recent_activities=[{
+                            "activity_type": "quiz",
+                            "module_id": module_id,
+                            "score": score,
+                            "duration_minutes": None,
+                        }],
+                        recent_feedback=[
+                            {"feedback_type": f.feedback_type, "score": f.score, "passed": f.passed}
+                            for f in recent_feedbacks
+                        ] + [{"feedback_type": "quiz_grading", "score": score, "passed": passed}],
+                    )
+
+                    report_session = TutorSession(
+                        employee_id=user_id,
+                        employee_name=f"User_{user_id}",
+                        module_id=module_id,
+                        curriculum_id=curriculum_id,
+                        module_title=f"{week_number}주차 퀴즈" if week_number else "퀴즈",
+                        session_type="quiz",
+                        status="completed",
+                    )
+                    report_session.set_messages([])
+                    db.add(report_session)
+                    db.flush()
+
+                    hr_feedback = Feedback(
+                        session_id=report_session.id,
+                        employee_id=user_id,
+                        feedback_type="quiz_hr_report",
+                        score=score,
+                        max_score=max_score,
+                        passed=passed,
+                        summary=(
+                            report_data.get("growth_trend")
+                            or f"{'합격' if passed else '불합격'} — {score}/{max_score}점"
+                        ),
+                        detail=report_data.get("report_content", ""),
+                    )
+                    hr_feedback.set_strengths(report_data.get("strengths", []))
+                    hr_feedback.set_weaknesses(report_data.get("weaknesses", []))
+                    hr_feedback.set_recommendations(report_data.get("recommendations", []))
+                    db.add(hr_feedback)
+                    db.commit()
+
+                    logger.info(
+                        f"[QuizCompleted] HR 리포트 저장 완료: feedback_id={hr_feedback.id}"
+                    )
+                except Exception as e:
+                    logger.error(f"[QuizCompleted] HR 리포트 생성 실패: {e}", exc_info=True)
+                finally:
+                    db.close()
 
             # ── Learning.WeekCompleted ────────────────────────────────
             elif event_type == "Learning.WeekCompleted":

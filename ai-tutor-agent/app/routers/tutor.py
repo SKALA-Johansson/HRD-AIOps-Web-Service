@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.tutor import TutorSession, Feedback, LearningActivity
+
+logger = logging.getLogger(__name__)
 from app.schemas.tutor import (
     TutorSessionRequest,
     TutorSessionResponse,
@@ -516,6 +518,59 @@ def get_weekly_reports(
         data=reports,
         code="REPORT-200",
         message=f"주차별 성장 리포트 {len(reports)}건 조회 완료",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+#  HR용 퀴즈 리포트 목록 조회
+# ══════════════════════════════════════════════════════════════════
+
+@router.get("/reports/hr/users/{user_id}/quiz")
+def get_hr_quiz_reports(
+    user_id: str,
+    curriculum_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    GET /tutor/reports/hr/users/{userId}/quiz
+    HR가 특정 사원의 퀴즈별 AI 리포트를 최신순으로 조회합니다.
+    """
+    query = (
+        db.query(Feedback, TutorSession)
+        .join(TutorSession, Feedback.session_id == TutorSession.id)
+        .filter(
+            Feedback.employee_id == user_id,
+            Feedback.feedback_type == "quiz_hr_report",
+        )
+    )
+    if curriculum_id:
+        query = query.filter(TutorSession.curriculum_id == curriculum_id)
+
+    rows = query.order_by(Feedback.created_at.desc()).all()
+
+    reports = [
+        {
+            "reportId": f.id,
+            "moduleTitle": s.module_title or "퀴즈",
+            "moduleId": s.module_id,
+            "curriculumId": s.curriculum_id,
+            "score": f.score,
+            "maxScore": f.max_score,
+            "passed": f.passed,
+            "summary": f.summary,
+            "strengths": f.get_strengths(),
+            "weaknesses": f.get_weaknesses(),
+            "recommendations": f.get_recommendations(),
+            "detail": f.detail,
+            "createdAt": f.created_at.isoformat() if f.created_at else None,
+        }
+        for f, s in rows
+    ]
+
+    return ApiResponse.ok(
+        data=reports,
+        code="REPORT-200",
+        message=f"HR 퀴즈 리포트 {len(reports)}건 조회 완료",
     )
 
 
